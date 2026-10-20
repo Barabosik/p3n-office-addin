@@ -1,14 +1,17 @@
 {
-  "name": "p3n-word",
-  "version": "1.0.0",
+  "name": "p3n-office-addin",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "p3n for Microsoft Word: check selected text for AI and rewrite it so it doesn't read as AI, in a task pane.",
+  "license": "MIT",
+  "description": "p3n for Word and Excel: check selected text for AI and rewrite it so it doesn't read as AI, in a task pane.",
   "scripts": {
     "serve": "node dev/server.mjs",
-    "start": "office-addin-debugging start manifest.xml desktop --app word --no-debug --dev-server \"node dev/server.mjs\" --dev-server-port 3000",
-    "stop": "office-addin-debugging stop manifest.xml",
-    "validate": "office-addin-manifest validate manifest.xml",
+    "start": "office-addin-debugging start manifest.dev.xml desktop --app word --no-debug --dev-server \"node dev/server.mjs\" --dev-server-port 3000",
+    "start:excel": "office-addin-debugging start manifest.dev.xml desktop --app excel --no-debug --dev-server \"node dev/server.mjs\" --dev-server-port 3000",
+    "stop": "office-addin-debugging stop manifest.dev.xml",
+    "manifest": "node dev/manifest-dev.mjs",
+    "validate": "office-addin-manifest validate manifest.xml && office-addin-manifest validate manifest.dev.xml",
     "e2e": "node dev/e2e.mjs"
   },
   "devDependencies": {

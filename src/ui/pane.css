@@ -86,3 +86,7 @@ h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
 
 footer#quota { padding: 10px 14px 14px; }
 footer#quota:empty { display: none; }
+
+/* index.html, the front page of the pane's host. */
+.site main { flex: 0; width: 100%; max-width: 36rem; margin: 0 auto; padding: 56px 20px; }
+.site h1 { font-size: 28px; }

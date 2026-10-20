@@ -1,0 +1,55 @@
+# Publishes the task pane (src/) and manifest.xml to https://barabosik.github.io/p3n-office-addin/.
+# Office loads the pane from there each time it opens, so a deploy reaches everyone who has the add-in.
+# It deploys only after the mocked end-to-end checks pass.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'manifest.xml', 'dev/**', 'package-lock.json', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer push waits rather than cancelling one halfway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Install dev tools
+        run: npm ci --ignore-scripts
+      - name: End-to-end (mocked API)
+        run: CHROME="$(command -v google-chrome)" node dev/e2e.mjs
+
+      - name: Collect the site
+        run: |
+          mkdir _site
+          cp -r src/. _site/
+          cp manifest.xml _site/
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

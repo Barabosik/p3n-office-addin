@@ -1,17 +1,19 @@
 // End-to-end check of the task pane in headless Chrome, with dev/office-stub.js standing in for Office.js
-// and a Word document. By default the API answers with canned runs (no calls to p3n).
+// and a Word document or an Excel workbook. By default the API answers with canned runs (no calls to p3n).
 //   npm run e2e                 canned answers, every scenario
 //   LIVE=1 npm run e2e          the live API without a key: one Check and one Rewrite (2 of the 10 free calls an hour)
 //   ONLY=replace,moved          some scenarios (names below); CHROME=path/to/chrome; FRAMES=1 saves motion frames
-// The run in real Word (sideloading, Ctrl+Z) is dev/word-live.mjs; see the README.
+// The run in real Word or Excel (sideloading, Ctrl+Z) is dev/live.mjs; see CONTRIBUTING.md.
 import puppeteer from 'puppeteer-core';
 import http from 'node:http';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
+import { devManifest, PUBLISHED } from './manifest-dev.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', 'src');
 const OUT = path.join(import.meta.dirname, 'out');
-const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const CHROME = process.env.CHROME || { win32: 'C:/Program Files/Google/Chrome/Application/chrome.exe', darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' }[process.platform] || '/usr/bin/google-chrome';
 const LIVE = !!process.env.LIVE;
 const STUB = await readFile(path.join(import.meta.dirname, 'office-stub.js'), 'utf8');
 
@@ -20,10 +22,16 @@ const P1 = "In today's fast-paced world, it's worth noting that effective commun
 const P2 = 'We moved the Ljubljana office to Tivolska 50 in March, and the new lease runs to 2029.';
 const P3 = 'Ultimately, this seamless transition unlocks a rich tapestry of possibilities for teams of all sizes.';
 const DOC = [{ text: TITLE, style: 'Heading 1' }, P1, P2, { text: P3, style: 'List Paragraph' }];
+// The workbook: notes in column A, numbers in B, a formula that makes text in B4, on a sheet whose name
+// needs quoting in an address.
+const SHEET = 'Q3 plan';
+const P7 = 'In summary, the numbers speak for themselves.';
+const BOOK = { [SHEET]: { A1: 'Notes', B1: 'Hours', A2: P1, B2: 12, A3: P2, B3: 30, A4: P3, B4: { v: 'Owner: Maja', f: '="Owner: "&"Maja"' }, A7: P7 } };
 
 // ---- canned API answers ------------------------------------------------------------------------
-const mock = { calls: [], auth: [], humanizeBlocks: null, status: null };
-const REWRITES = { [P1]: 'Good tools help a team talk. Which ones? That depends on the team.', [P3]: 'It works for teams of any size.', 'seamless transition': 'move' };
+const mock = { calls: [], auth: [], pages: [], humanizeBlocks: null, status: null, long: false };
+// P7's rewrite starts with a minus sign, which Excel would read as the start of a formula.
+const REWRITES = { [P1]: 'Good tools help a team talk. Which ones? That depends on the team.', [P3]: 'It works for teams of any size.', 'seamless transition': 'move', [P7]: '-30% hours, as planned.' };
 const rewriteOf = (p) => REWRITES[p] ?? p.split(' ').slice(0, 8).join(' ') + '.';
 function answer(url, body) {
   const free = { 'X-Free-Remaining': '7' };
@@ -35,9 +43,12 @@ function answer(url, body) {
   }
   const text = body?.text ?? '';
   if (url.endsWith('/v1/detect')) {
-    return { status: 200, headers: free, body: { id: 'mock-detect', skill: 'detect', status: 'succeeded', cached: false, error: null, charged_usd: '0',
+    const a = { status: 200, headers: free, body: { id: 'mock-detect', skill: 'detect', status: 'succeeded', cached: false, error: null, charged_usd: '0',
       output: { version: 'detect-v1.2', ai: 0.91, label: 'ai', verdict: 'Generic claims with no fact behind them.', confidence: { level: 'medium', reason: 'Short text.' },
         sentences: [{ text: text.split(/(?<=\.)\s/)[0], why: 'A stock opening with a vague claim.' }], examples: [] } } };
+    // A long result, so a short pane has room to scroll past the score.
+    if (mock.long) a.body.output.sentences = text.split(/(?<=\.)\s/).map((t) => ({ text: t, why: 'Generic, with no fact behind it. '.repeat(4) }));
+    return a;
   }
   if (url.endsWith('/v1/humanize')) {
     let paras = text.split(/\n\s*\n/).map(rewriteOf);
@@ -63,10 +74,11 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
 
 await mkdir(OUT, { recursive: true });
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, pipe: true, args: ['--lang=en-US'] });
+// CI runners have no user namespaces for Chrome's sandbox.
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, pipe: true, args: ['--lang=en-US', ...(process.env.CI ? ['--no-sandbox'] : [])] });
 const errors = [];
 
-async function openPane({ name, width = 320, height = 900, calm = false, key = null }) {
+async function openPane({ name, width = 320, height = 900, calm = false, key = null, host = 'Word' }) {
   const page = await browser.newPage();
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
   page.on('console', (m) => {
@@ -85,6 +97,7 @@ async function openPane({ name, width = 320, height = 900, calm = false, key = n
       body.auth = r.headers().authorization;
       mock.calls.push(new URL(url).pathname);
       mock.auth.push(body.auth ?? null);
+      mock.pages.push(name);
       const a = answer(url, body);
       return r.respond({ status: a.status, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Expose-Headers': 'X-Free-Remaining', ...(a.headers ?? {}) }, body: JSON.stringify(a.body) });
     }
@@ -92,11 +105,14 @@ async function openPane({ name, width = 320, height = 900, calm = false, key = n
     errors.push(`${name}: unexpected request to ${url}`);
     return r.abort();
   });
-  // The document and the user's selection exist before the pane opens.
-  await page.evaluateOnNewDocument((d, k) => {
+  // The document or workbook and the user's selection exist before the pane opens.
+  await page.evaluateOnNewDocument((app, d, k) => {
+    window.__host = app;
     window.__setup = d;
+    // Pages share the test origin's storage: each starts with the key it asks for, or none.
     if (k) localStorage.setItem('p3n.apiKey', k);
-  }, DOC, key);
+    else localStorage.removeItem('p3n.apiKey');
+  }, host, host === 'Excel' ? BOOK : DOC, key);
   return page;
 }
 
@@ -117,6 +133,7 @@ const clickText = (page, text) => page.evaluate((t) => [...document.querySelecto
 const hasButton = (page, text) => page.evaluate((t) => [...document.querySelectorAll('#result button')].some((b) => b.textContent.startsWith(t)), text);
 const note = (page) => page.evaluate(() => document.querySelector('#result [data-status]')?.textContent ?? '');
 const docParas = (page) => page.evaluate(() => window.__doc.paragraphs());
+const cell = (page, a) => page.evaluate((x) => window.__book.cell(x), a);
 const docStyles = (page) => page.evaluate(() => window.__doc.styles());
 // Use selection, then wait for the text to land in the box.
 async function grab(page) {
@@ -129,7 +146,8 @@ async function run(page, button) {
   await page.waitForFunction(settled, { timeout: 120000, polling: 100 });
 }
 async function replaceNow(page) {
-  await clickText(page, 'Replace in document');
+  await page.evaluate(() => { const s = document.querySelector('#result [data-status]'); if (s) s.hidden = true; });
+  await clickText(page, 'Replace in');
   await page.waitForFunction(() => { const s = document.querySelector('#result [data-status]'); return s && !s.hidden; }, { timeout: 10000 });
 }
 
@@ -143,7 +161,7 @@ const SCENARIOS = {
     await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 }).catch(() => {});
     const box = await page.$eval('#text', (t) => t.value);
     ok('check: the selection is in the box when the pane opens', box === P1, JSON.stringify(box.slice(0, 40)));
-    ok('check: nothing is sent before a click', mock.calls.length === calls, mock.calls.slice(calls).join(','));
+    ok('check: nothing is sent before a click', !mock.pages.slice(calls).includes('check'), mock.calls.slice(calls).join(','));
     const grab = await page.$eval('#grab', (b) => b.textContent);
     ok('check: the link counts the selected words', /Use selection \(\d+ words\)/.test(grab), grab);
     const t0 = Date.now();
@@ -312,6 +330,21 @@ const SCENARIOS = {
     await page.close();
   },
 
+  // With motion, in a short pane: the result scrolls up smoothly and the score ends in view, whole. (Word's
+  // and Excel's WebView doesn't hold the scroll position when the progress bar above it goes away.)
+  async reveal() {
+    const page = await openPane({ name: 'reveal', height: 560 });
+    await boot(page, [P1]);
+    await page.addStyleTag({ content: 'html, body { overflow-anchor: none; }' });
+    mock.long = true;
+    await run(page, '#check');
+    mock.long = false;
+    await new Promise((r) => setTimeout(r, 1500));
+    const at = await page.evaluate(() => { const r = document.querySelector('.score').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), scrolled: Math.round(scrollY) }; });
+    ok('reveal: the score scrolls into view, not past it', at.scrolled > 0 && at.top >= 0 && at.bottom <= 560, JSON.stringify(at));
+    await page.close();
+  },
+
   // Errors and limits read as the extension's do.
   async limits() {
     const page = await openPane({ name: 'limits' });
@@ -363,7 +396,158 @@ const SCENARIOS = {
     await page.close();
   },
 
-  // Outside Word (the pane opened in a plain browser): paste still works, no selection link.
+  // ---- Excel ----------------------------------------------------------------------------------
+
+  // Several cells: each with text comes in as a paragraph, numbers stay out. A rewrite of them can be
+  // copied but not put back, and the pane says why. A whole column is read only where the sheet has data.
+  async excelCheck() {
+    const page = await openPane({ name: 'excelCheck', host: 'Excel' });
+    const calls = mock.calls.length;
+    await boot(page, ['A1:B3']);
+    await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 }).catch(() => {});
+    const box = await page.$eval('#text', (t) => t.value);
+    ok('excel: the selected cells are in the box when the pane opens', box === ['Notes', 'Hours', P1, P2].join('\n\n'), JSON.stringify(box.slice(0, 50)));
+    ok('excel: nothing is sent before a click', !mock.pages.slice(calls).includes('excelCheck'), mock.calls.slice(calls).join(','));
+    ok('excel: the link counts the words in the cells', /Use selection \(\d+ words\)/.test(await page.$eval('#grab', (b) => b.textContent)));
+    ok('excel: the box suggests selecting cells', /Select cells/.test(await page.$eval('#text', (t) => t.placeholder)));
+    await run(page, '#check');
+    ok('excel: Check shows a result', /likely AI/.test(await page.$eval('#result', (r) => r.innerText)));
+    await run(page, '#rewrite');
+    const kept = await page.$eval('#result', (r) => r.innerText);
+    ok('excel: a rewrite of several cells has Copy but no Replace, and says why', !(await hasButton(page, 'Replace')) && (await hasButton(page, 'Copy')) && /single cell/.test(kept), kept.split('\n').slice(-3).join(' '));
+    await page.evaluate(() => window.__book.select('A1:A1048576'));
+    const colWords = ['Notes', P1, P2, P3, P7].join(' ').split(/\s+/).length;
+    await page.waitForFunction((n) => document.querySelector('#grab').textContent === `Use selection (${n} words)`, { timeout: 5000 }, colWords).catch(() => {});
+    const col = await page.$eval('#grab', (b) => b.textContent);
+    ok('excel: a whole column is read only where it has text', col === `Use selection (${colWords} words)`, col);
+    await page.close();
+  },
+
+  // One cell: Replace writes the rewrite into it, leaves the rest of the sheet alone and selects it.
+  async excelReplace() {
+    const page = await openPane({ name: 'excelReplace', host: 'Excel' });
+    await boot(page, ['A4']);
+    await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 });
+    await run(page, '#rewrite');
+    ok('excel: Replace names the cell', await hasButton(page, 'Replace in A4'));
+    await new Promise((r) => setTimeout(r, 1300));
+    await page.screenshot({ path: path.join(OUT, 'pane-excel-rewrite.png'), fullPage: true });
+    await replaceNow(page);
+    const a4 = await cell(page, 'A4');
+    ok('excel: the rewrite is in the cell, as text', a4.value === rewriteOf(P3) && a4.type === 'String', JSON.stringify(a4));
+    const rest = await Promise.all(['A2', 'A3', 'B3', 'B4', 'A7'].map((a) => cell(page, a)));
+    ok('excel: the other cells are untouched, the formula too', rest[0].value === P1 && rest[1].value === P2 && rest[2].value === 30 && rest[3].formula === '="Owner: "&"Maja"' && rest[4].value === P7);
+    ok('excel: the cell is selected', (await page.evaluate(() => window.__book.selected())) === `${SHEET}!A4`);
+    const msg = await note(page);
+    ok('excel: says where and how to undo', /A4/.test(msg) && /Ctrl\+Z/.test(msg), msg);
+    await new Promise((r) => setTimeout(r, 500));
+    await page.screenshot({ path: path.join(OUT, 'pane-excel-replaced.png'), fullPage: true });
+    await clickText(page, 'Try another rewrite');
+    await page.waitForFunction(settled, { timeout: 10000 });
+    await replaceNow(page);
+    ok('excel: a second rewrite replaces the first', /Replaced/.test(await note(page)) && (await cell(page, 'A4')).value === rewriteOf(P3));
+    await page.close();
+  },
+
+  // A rewrite that starts with a minus sign stays text, not a broken formula.
+  async excelText() {
+    const page = await openPane({ name: 'excelText', host: 'Excel' });
+    await boot(page, ['A7']);
+    await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 });
+    await run(page, '#rewrite');
+    await replaceNow(page);
+    const a7 = await cell(page, 'A7');
+    ok('excel: a rewrite starting with "-" goes in as text', a7.value === REWRITES[P7] && a7.type === 'String' && !a7.formula, JSON.stringify(a7));
+    await page.close();
+  },
+
+  // The cell was edited after it was taken: Replace refuses and keeps the edit.
+  async excelChanged() {
+    const page = await openPane({ name: 'excelChanged', host: 'Excel' });
+    await boot(page, ['A2']);
+    await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 });
+    await run(page, '#rewrite');
+    await page.evaluate(() => window.__book.type('A2', 'Edited by hand.'));
+    await replaceNow(page);
+    const msg = await note(page);
+    ok('excel: Replace refuses when the cell changed', /cell changed/.test(msg) && (await cell(page, 'A2')).value === 'Edited by hand.', msg);
+    await page.close();
+  },
+
+  // A formula's text can be checked and rewritten, but the formula is never written over.
+  async excelFormula() {
+    const page = await openPane({ name: 'excelFormula', host: 'Excel' });
+    await boot(page, ['B4']);
+    await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 });
+    ok('excel: a formula\'s text comes in', (await page.$eval('#text', (t) => t.value)) === 'Owner: Maja');
+    await run(page, '#rewrite');
+    ok('excel: no Replace over a formula, and it says so', !(await hasButton(page, 'Replace')) && /formula/.test(await page.$eval('#result', (r) => r.innerText)));
+    await page.close();
+  },
+
+  // Excel is in the middle of editing a cell: Replace waits for it, then works.
+  async excelEditing() {
+    const page = await openPane({ name: 'excelEditing', host: 'Excel' });
+    await boot(page, ['A3']);
+    await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 });
+    await run(page, '#rewrite');
+    await page.evaluate(() => window.__book.editing(true));
+    await replaceNow(page);
+    const msg = await note(page);
+    ok('excel: while a cell is being edited, Replace says to finish it first', /busy editing a cell/.test(msg) && (await cell(page, 'A3')).value === P2, msg);
+    await page.evaluate(() => window.__book.editing(false));
+    await replaceNow(page);
+    ok('excel: then Replace works', /Replaced/.test(await note(page)) && (await cell(page, 'A3')).value === rewriteOf(P2), await note(page));
+    await page.close();
+  },
+
+  // The sheet is renamed after the text was taken: Replace still finds the cell. A protected sheet refuses.
+  async excelSheet() {
+    const page = await openPane({ name: 'excelSheet', host: 'Excel' });
+    await boot(page, ['A3']);
+    await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 });
+    await run(page, '#rewrite');
+    await page.evaluate((n) => { window.__book.rename(n, `${n} (final)`); window.__book.lock(); }, SHEET);
+    await replaceNow(page);
+    ok('excel: a protected sheet is left alone, and it says so', /protected/.test(await note(page)) && (await cell(page, 'A3')).value === P2, await note(page));
+    await page.evaluate(() => window.__book.lock(false));
+    await replaceNow(page);
+    ok('excel: Replace finds the cell after the sheet was renamed', /Replaced/.test(await note(page)) && (await cell(page, 'A3')).value === rewriteOf(P2), await note(page));
+    await page.close();
+  },
+
+  // An empty cell, and a selection too big to read.
+  async excelEmpty() {
+    const page = await openPane({ name: 'excelEmpty', host: 'Excel' });
+    await page.evaluateOnNewDocument((n) => { window.__setup[n].Z1000 = 'far away'; }, SHEET);
+    await boot(page, ['D10']);
+    ok('excel: an empty cell offers Use selection, and Check waits for text', (await page.$eval('#grab', (b) => b.textContent)) === 'Use selection' && (await page.$eval('#check', (b) => b.disabled)));
+    await grab(page);
+    ok('excel: Use selection on an empty cell says to select text', /no text/.test(await page.$eval('#hint', (h) => h.textContent)));
+    await page.evaluate(() => window.__book.select('A1:Z1000'));
+    await new Promise((r) => setTimeout(r, 400));
+    await grab(page);
+    ok('excel: a selection too big to read says so', /too big/.test(await page.$eval('#hint', (h) => h.textContent)), await page.$eval('#hint', (h) => h.textContent));
+    await page.close();
+  },
+
+  // ---- manifests --------------------------------------------------------------------------------
+
+  // The published manifest and its localhost twin say the same thing; every file they name exists.
+  async manifests() {
+    if (LIVE) return;
+    const xml = await readFile(path.join(ROOT, '..', 'manifest.xml'), 'utf8');
+    const dev = await readFile(path.join(ROOT, '..', 'manifest.dev.xml'), 'utf8');
+    ok('manifests: manifest.dev.xml is manifest.xml served from localhost (npm run manifest)', devManifest(xml) === dev);
+    ok('manifests: Word and Excel', /<Host Name="Document"\/>/.test(xml) && /<Host Name="Workbook"\/>/.test(xml) && /ContextMenuText/.test(xml) && /ContextMenuCell/.test(xml));
+    const urls = [...xml.matchAll(/DefaultValue="(https:[^"]+)"/g)].map((m) => m[1]).filter((u) => u.startsWith(PUBLISHED));
+    const missing = urls.filter((u) => !existsSync(path.join(ROOT, u.slice(PUBLISHED.length))));
+    ok('manifests: every pane file the manifest names is in src/', urls.length >= 6 && !missing.length, missing.join(' '));
+    const pkg = JSON.parse(await readFile(path.join(ROOT, '..', 'package.json'), 'utf8'));
+    ok('manifests: the version matches package.json', xml.includes(`<Version>${pkg.version}.0</Version>`), pkg.version);
+  },
+
+  // Outside Office (the pane opened in a plain browser): paste still works, no selection link.
   async browser() {
     if (LIVE) return;
     const page = await browser.newPage();

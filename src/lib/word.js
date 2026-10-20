@@ -33,7 +33,7 @@ export async function peekSelection() {
   });
 }
 
-// Reads the selection, or with `whole` the document when nothing is selected, and keeps a tracked
+// Reads the selection, or with `whole` the document when nothing is selected. `ref` keeps a tracked
 // reference to that range so Replace can find it again after other edits move it.
 export async function capture({ whole = false } = {}) {
   return Word.run(async (ctx) => {
@@ -51,24 +51,24 @@ export async function capture({ whole = false } = {}) {
     }
     range.track();
     await ctx.sync();
-    return { range, raw: range.text, text: toPlain(range.text), scope };
+    return { text: toPlain(range.text), scope, ref: { range, raw: range.text } };
   });
 }
 
-export function release(src) {
-  if (!src?.range) return;
-  Word.run(src.range, async (ctx) => { src.range.untrack(); await ctx.sync(); }).catch(() => {});
+export function release(ref) {
+  if (!ref?.range) return;
+  Word.run(ref.range, async (ctx) => { ref.range.untrack(); await ctx.sync(); }).catch(() => {});
 }
 
-// Puts `rewrite` where `src` was. Refuses if that text changed since it was read, so it never writes
+// Puts `rewrite` where `ref` was. Refuses if that text changed since it was read, so it never writes
 // over something the user didn't send. Paragraph by paragraph when the counts match, so each keeps its
 // style (heading, list item, quote); otherwise one insert that keeps the first paragraph's style. The
 // paragraph mark at the end of the range is never touched, so no blank paragraph is added or lost.
 // It is all one batch of ordinary Word edits, so Ctrl+Z in the document undoes it.
-export async function replace(src, rewrite) {
+export async function replace(ref, rewrite) {
   try {
-    return await Word.run(src.range, async (ctx) => {
-      const range = src.range;
+    return await Word.run(ref.range, async (ctx) => {
+      const range = ref.range;
       range.load('text');
       const paras = range.paragraphs;
       paras.load('items');
@@ -77,7 +77,7 @@ export async function replace(src, rewrite) {
       const pictures = range.inlinePictures;
       pictures.load('items');
       await ctx.sync();
-      if (!same(range.text, src.raw)) return { ok: false, reason: 'changed' };
+      if (!same(range.text, ref.raw)) return { ok: false, reason: 'changed' };
       if (tables.items.length) return { ok: false, reason: 'table' };
       if (pictures.items.length) return { ok: false, reason: 'picture' };
 
@@ -109,7 +109,7 @@ export async function replace(src, rewrite) {
       range.untrack();
       now.select();
       await ctx.sync();
-      return { ok: true, src: { range: now, raw: now.text } };
+      return { ok: true, ref: { range: now, raw: now.text } };
     });
   } catch (e) {
     // The range was deleted, the document is protected, or the text sits in a locked content control.

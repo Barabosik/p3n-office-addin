@@ -2,6 +2,7 @@
 import { runSkill, me, ApiError, LINKS, MAX_CHARS } from './lib/api.js';
 import { apiKey, freeLeft } from './lib/store.js';
 import * as word from './lib/word.js';
+import * as excel from './lib/excel.js';
 
 const $ = (s) => document.querySelector(s);
 const els = {
@@ -9,8 +10,62 @@ const els = {
   busy: $('#busy'), busyText: $('#busy-text'), cancel: $('#cancel'), result: $('#result'), quota: $('#quota'), account: $('#account'),
   main: $('#main'), settings: $('#settings'), back: $('#back'), key: $('#key'), keyStatus: $('#key-status'), remove: $('#remove'),
 };
-// source: the document range the text came from ({ range, raw, sent }), so Replace can put a rewrite back.
-const state = { key: apiKey.get(), word: false, source: null, controller: null, timer: null, free: freeLeft.get(), selected: null };
+// host: the Word or Excel glue and words below, once Office says where the pane runs.
+// source: where the text came from ({ sent, ref, where, why }); ref is the glue's handle on it for Replace,
+// and null when it can't go back there (why says why).
+const state = { key: apiKey.get(), host: null, source: null, controller: null, timer: null, free: freeLeft.get(), selected: null };
+
+// What differs between Word and Excel: the glue, the API version it needs, and the words for where text lives.
+const HOSTS = {
+  Word: {
+    glue: word, api: ['WordApi', '1.3'],
+    placeholder: 'Select text in your document and click Use selection. Or paste it here.',
+    nothing: 'Use whole document',
+    hints: {
+      none: 'Nothing is selected. Select text in the document first.',
+      empty: 'The document is empty. Type or paste text in the box.',
+      document: 'Took the whole document, since nothing was selected.',
+      failed: 'p3n can\'t read the document right now. Copy the text and paste it in the box.',
+      old: 'This version of Word is too old for p3n to read the document. Paste the text in the box.',
+    },
+    replace: () => 'Replace in document',
+    replaced: () => `Replaced in the document and selected there. ${undoKey()} in the document undoes it.`,
+    refused: {
+      changed: 'That text changed in the document since you took it, so p3n left it alone.',
+      gone: 'That text is no longer in the document.',
+      table: 'That part of the document has a table, so p3n won\'t paste over it.',
+      picture: 'That part of the document has a picture, so p3n won\'t paste over it.',
+      locked: 'Word didn\'t allow the edit there (the document or that part of it may be protected).',
+    },
+    retry: 'Copy the rewrite and paste it instead, or select the text again and click Use selection.',
+  },
+  Excel: {
+    glue: excel, api: ['ExcelApi', '1.4'],
+    placeholder: 'Select cells and click Use selection. Or paste text here.',
+    nothing: 'Use selection',
+    hints: {
+      none: 'The selected cells have no text. Select cells with text first.',
+      too_big: 'That selection is too big to read. Select fewer cells.',
+      failed: 'p3n can\'t read the sheet right now. If you\'re typing in a cell, press Enter, then try again.',
+      old: 'This version of Excel is too old for p3n to read the sheet. Paste the text in the box.',
+    },
+    replace: (where) => `Replace in ${where}`,
+    replaced: (where) => `Replaced the text in ${where} and selected it. ${undoKey()} in the sheet undoes it.`,
+    // Why a rewrite of these cells has no Replace button.
+    kept: {
+      cells: 'p3n writes a rewrite back only into a single cell. Copy it, or select one cell and click Use selection.',
+      formula: 'That cell holds a formula, so p3n won\'t write over it. Copy the rewrite instead.',
+    },
+    refused: {
+      changed: 'That cell changed since you took it, so p3n left it alone.',
+      gone: 'That sheet is no longer in the workbook.',
+      formula: 'That cell holds a formula now, so p3n won\'t write over it.',
+      editing: 'Excel is busy editing a cell. Press Enter or Esc there, then try again.',
+      locked: 'Excel didn\'t allow the edit (the sheet may be protected).',
+    },
+    retry: 'Copy the rewrite and paste it instead, or select the cell again and click Use selection.',
+  },
+};
 
 // Tiny DOM builder. Strings become text nodes, so API text is never parsed as HTML. Styles go through
 // the CSSOM rather than style attributes.
@@ -93,7 +148,7 @@ function runScore(root) {
   requestAnimationFrame(step);
 }
 
-// Word's pane is short: a result that lands below the fold scrolls up into view, so the score and
+// The pane is short: a result that lands below the fold scrolls up into view, so the score and
 // Replace are seen without hunting for them.
 function reveal(el) {
   if (el.getBoundingClientRect().top > innerHeight * 0.55) el.scrollIntoView({ block: 'start', behavior: calm.matches ? 'auto' : 'smooth' });
@@ -134,11 +189,11 @@ function refreshInput() {
   els.rewrite.disabled = off;
 }
 
-// The selection link says what it will take: the selection and its size, or the whole document.
+// The selection link says what it will take: the selection and its size, or (in Word) the whole document.
 function refreshGrab() {
-  els.grab.hidden = !state.word;
+  els.grab.hidden = !state.host;
   const w = state.selected?.words ?? 0;
-  els.grab.textContent = w ? `Use selection (${w.toLocaleString()} ${w === 1 ? 'word' : 'words'})` : 'Use whole document';
+  els.grab.textContent = w ? `Use selection (${w.toLocaleString()} ${w === 1 ? 'word' : 'words'})` : state.host?.nothing ?? '';
 }
 
 function hint(msg) {
@@ -146,24 +201,25 @@ function hint(msg) {
   els.hint.hidden = !msg;
 }
 
-// Reads the selection (or the document) into the box and remembers the range for Replace.
+// Reads the selection (or the document) into the box and remembers where it came from, for Replace.
 async function grab({ whole = true } = {}) {
+  const { glue, hints } = state.host;
   hint('');
   try {
-    const got = await word.capture({ whole });
+    const got = await glue.capture({ whole });
     if (!got.text) {
-      hint(got.scope === 'empty' ? 'The document is empty. Type or paste text in the box.' : 'Nothing is selected. Select text in the document first.');
+      hint(hints[got.scope] ?? hints.none);
       return null;
     }
-    word.release(state.source);
-    state.source = { range: got.range, raw: got.raw, sent: got.text };
+    glue.release(state.source?.ref);
+    state.source = { sent: got.text, ref: got.ref, where: got.where, why: got.why };
     els.text.value = got.text;
     arrived();
     refreshInput();
-    if (got.scope === 'document') hint('Took the whole document, since nothing was selected.');
+    if (got.scope === 'document') hint(hints.document);
     return got.text;
   } catch {
-    hint('p3n can\'t read the document right now. Copy the text and paste it in the box.');
+    hint(hints.failed);
     return null;
   }
 }
@@ -180,7 +236,7 @@ els.text.addEventListener('keydown', (e) => {
 // With the box empty, Check and Rewrite take the selection first.
 async function go(skill) {
   let text = els.text.value;
-  if (!text.trim() && state.word) text = await grab({ whole: false });
+  if (!text.trim() && state.host) text = await grab({ whole: false });
   if (text) start(skill, text);
 }
 
@@ -188,7 +244,7 @@ async function go(skill) {
 let peekTimer;
 function watchSelection() {
   const peek = async () => {
-    try { state.selected = await word.peekSelection(); } catch { state.selected = null; }
+    try { state.selected = await state.host.glue.peekSelection(); } catch { state.selected = null; }
     refreshGrab();
     refreshInput();
   };
@@ -217,8 +273,12 @@ async function start(skill, text, options) {
   try {
     const { run, free } = await runSkill(skill, text, { key: state.key, options, signal: controller.signal });
     if (free !== null) { state.free = free; freeLeft.set(free); }
+    // The progress bar goes before the result scrolls into view; gone after, it would pull the score up
+    // out of sight.
+    setBusy(null);
     render(run, text);
   } catch (e) {
+    setBusy(null);
     if (e.name !== 'AbortError') showError(e);
     if (e.free != null) { state.free = e.free; freeLeft.set(e.free); }
   } finally {
@@ -306,8 +366,10 @@ function renderHumanize(o, sent) {
   const t = tone(o.ai_after);
   // The rewrite ends with a line break; the pane shows it without, and Replace never adds a paragraph for it.
   const rewrite = o.text.trim();
-  // Only offer Replace when what was rewritten is still what came from the document, not text edited here.
-  const replaceable = !!state.source && state.source.sent.trim() === sent;
+  // Only offer Replace when what was rewritten is still what came from the document, not text edited here,
+  // and the glue can put it back there.
+  const fromDoc = !!state.source && state.source.sent.trim() === sent;
+  const replaceable = fromDoc && !!state.source.ref;
   const status = h('p', { class: 'small', hidden: true, 'data-status': true });
   const copyBtn = h('button', { type: 'button', class: replaceable ? 'btn ghost' : 'btn accent' }, 'Copy');
   copyBtn.addEventListener('click', async () => {
@@ -318,7 +380,7 @@ function renderHumanize(o, sent) {
   });
   const buttons = [];
   if (replaceable) {
-    const rep = h('button', { type: 'button', class: 'btn accent' }, 'Replace in document');
+    const rep = h('button', { type: 'button', class: 'btn accent' }, state.host.replace(state.source.where));
     rep.addEventListener('click', () => replaceInDocument(rewrite, rep, status));
     buttons.push(rep);
   }
@@ -328,15 +390,17 @@ function renderHumanize(o, sent) {
   const parts = [
     h('div', { class: 'score', 'data-from': before, 'data-to': pct(o.ai_after), 'data-tone': t },
       h('div', {}, h('p', { class: 'label' }, o.passes ? 'No longer reads as AI' : 'Still reads as AI'),
-        h('p', { class: 'small muted' }, `AI Detection: ${LABELS[o.label_after] ?? 'unknown'}`)),
-      h('p', { class: `pct t-${t}` },
+        h('p', { class: 'small muted' }, `Detector model: ${LABELS[o.label_after] ?? 'unknown'}`)),
+      h('p', { class: `pct t-${t}`, title: 'Detector model, AI class' },
         o.ai_before != null ? h('span', { class: 'from' }, `${before}% → `) : null,
-        scoreNum(pct(o.ai_after)), h('small', {}, 'AI'))),
+        scoreNum(pct(o.ai_after)), h('small', {}, 'AI class'))),
     meter(o.ai_after, t),
     h('div', { class: 'rewrite' }, rewrite),
     h('div', { class: 'row' }, buttons),
     status,
   ];
+  const kept = fromDoc && !replaceable && state.host?.kept?.[state.source.why];
+  if (kept) parts.push(h('p', { class: 'small muted' }, kept));
   if (words(o.text) / Math.max(1, words(sent)) < 0.6) {
     parts.push(h('p', { class: 'note warn small' }, `Kept ${words(o.text)} of ${words(sent)} words. Most of this text was general statements with no facts in them, and those are what reads as AI. Add the specifics you meant (who, what, numbers) and run it again.`));
   }
@@ -349,25 +413,21 @@ function renderHumanize(o, sent) {
 
 async function replaceInDocument(text, button, status) {
   const s = state.source;
+  const host = state.host;
   const say = (msg, kind) => { status.textContent = msg; status.className = `note small ${kind}`; status.hidden = false; };
   button.disabled = true;
-  const r = s ? await word.replace(s, text) : { ok: false, reason: 'gone' };
+  const r = s?.ref ? await host.glue.replace(s.ref, text) : { ok: false, reason: 'gone' };
   if (r.ok) {
     // The document now holds this rewrite; another rewrite of the same text can replace it in turn.
-    state.source = { ...r.src, sent: s.sent };
+    state.source = { ...s, ref: r.ref };
     button.replaceChildren(checkMark(), 'Replaced');
     button.className = 'btn ok';
-    return say(`Replaced in the document and selected there. ${undoKey()} in the document undoes it.`, 'ok');
+    return say(host.replaced(s.where), 'ok');
   }
   button.disabled = false;
-  const why = {
-    changed: 'That text changed in the document since you took it, so p3n left it alone.',
-    gone: 'That text is no longer in the document.',
-    table: 'That part of the document has a table, so p3n won\'t paste over it.',
-    picture: 'That part of the document has a picture, so p3n won\'t paste over it.',
-    locked: 'Word didn\'t allow the edit there (the document or that part of it may be protected).',
-  }[r.reason] ?? 'p3n couldn\'t put the text back.';
-  say(`${why} Copy the rewrite and paste it instead, or select the text again and click Use selection.`, 'warn');
+  // Excel busy in a cell is a wait, not a dead end: there's nothing to copy.
+  if (r.reason === 'editing') return say(host.refused.editing, 'warn');
+  say(`${host.refused[r.reason] ?? 'p3n couldn\'t put the text back.'} ${host.retry}`, 'warn');
 }
 
 function showError(e) {
@@ -498,11 +558,13 @@ els.remove.addEventListener('click', () => {
   refreshAccount();
   // Office.js comes from Microsoft's CDN; without it (offline, or the page opened in a browser) the box still works.
   const info = globalThis.Office ? await Office.onReady() : null;
-  state.word = !!info && info.host === Office.HostType.Word && !!Office.context.requirements?.isSetSupported('WordApi', '1.3');
-  if (!state.word) {
-    hint(info?.host ? 'This version of Word is too old for p3n to read the document. Paste the text in the box.' : 'Open p3n from Word to use your selection. You can paste text here meanwhile.');
+  const host = HOSTS[info?.host];
+  if (!host || !Office.context.requirements?.isSetSupported(...host.api)) {
+    hint(host ? host.hints.old : 'Open p3n from Word or Excel to use your selection. You can paste text here meanwhile.');
     return;
   }
+  state.host = host;
+  els.text.placeholder = host.placeholder;
   refreshGrab();
   await watchSelection();
   // Opened with text selected (the ribbon button or the right-click menu): take it in, send nothing yet.
