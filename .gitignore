@@ -1,0 +1,5 @@
+# Dev tooling and the design skills used while building (third-party, kept local)
+node_modules/
+dev/out/
+.claude/skills/
+*.zip

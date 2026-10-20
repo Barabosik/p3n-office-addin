@@ -1,0 +1,88 @@
+/* The task pane. Word opens it about 320px wide; it grows if the user drags it wider. */
+body { display: flex; flex-direction: column; min-height: 100vh; }
+main, .settings { flex: 1; padding: 0 14px 16px; display: flex; flex-direction: column; gap: 20px; }
+.stack { display: flex; flex-direction: column; gap: 14px; }
+.stack.tight { gap: 8px; }
+
+header.bar { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 10px; }
+.brand { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); text-decoration: none; }
+.wordmark { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.wordmark span { color: var(--accent); }
+
+.input { display: flex; flex-direction: column; gap: 8px; }
+
+/* Busy: shows only after a beat, so an instant (cached) result doesn't flash it. */
+.busy { display: flex; flex-direction: column; gap: 8px; animation: appear var(--t-ui) var(--ease-out) 150ms both; }
+.progress { height: 4px; border-radius: 2px; background: var(--rule); overflow: hidden; }
+.progress i { display: block; height: 100%; width: 40%; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--accent) 70%); animation: slide 1.4s var(--ease-in-out) infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes appear { from { opacity: 0; } }
+
+/* Text arriving from the document lands in the box with a brief highlight. */
+textarea.arrived { animation: arrive 900ms var(--ease-out); }
+@keyframes arrive { from { background-color: var(--highlight); } }
+
+/* The result: parts arrive in reading order (--i is set in taskpane.js), the score runs, flagged sentences get
+   highlighted like a pen stroke, and a rewrite wipes in. */
+#result { display: flex; flex-direction: column; gap: 14px; }
+#result:empty { display: none; }
+.result-in > * { animation: rise var(--t-ui) var(--ease-out) both; animation-delay: calc(min(var(--i, 0), 6) * 50ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+.rewrite {
+  -webkit-mask: linear-gradient(180deg, #000 40%, transparent 60%) 0 100% / 100% 260% no-repeat;
+  mask: linear-gradient(180deg, #000 40%, transparent 60%) 0 100% / 100% 260% no-repeat;
+  animation: wipe 650ms var(--ease-out) 100ms both;
+}
+@keyframes wipe { from { -webkit-mask-position: 0 100%; mask-position: 0 100%; } to { -webkit-mask-position: 0 0; mask-position: 0 0; } }
+.quotes li.hit q { background: linear-gradient(var(--highlight), var(--highlight)) no-repeat 0 0 / 0% 100%; animation: sweep 600ms var(--ease-out) both; animation-delay: calc(250ms + min(var(--j, 0), 4) * 140ms); }
+@keyframes sweep { to { background-size: 100% 100%; } }
+
+/* Settings slide in from the side they're opened from (the API key link, top right), and back out. */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--t-ui); animation-timing-function: var(--ease-out); }
+[data-view="settings"]::view-transition-new(root) { animation-name: in-right; }
+[data-view="settings"]::view-transition-old(root) { animation-name: out-left; }
+[data-view="main"]::view-transition-new(root) { animation-name: in-left; }
+[data-view="main"]::view-transition-old(root) { animation-name: out-right; }
+@keyframes in-right { from { opacity: 0; transform: translateX(24px); } }
+@keyframes in-left { from { opacity: 0; transform: translateX(-24px); } }
+@keyframes out-left { to { opacity: 0; transform: translateX(-24px); } }
+@keyframes out-right { to { opacity: 0; transform: translateX(24px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .progress i { animation: none; width: 100%; background: var(--accent); opacity: .5; }
+  .result-in > * { animation: appear 150ms ease both; }
+  .rewrite { -webkit-mask: none; mask: none; animation: none; }
+  .quotes li.hit q { animation: none; background-size: 100% 100%; }
+  textarea.arrived { animation-duration: 400ms; }
+}
+
+.score { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.score .label { font-size: 18px; font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; text-wrap: balance; }
+.score .label + .small { text-wrap: balance; }
+.score .pct { font-size: 34px; font-weight: 700; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.score .pct small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-top: 4px; }
+.score .pct .from { font-size: 18px; color: var(--muted); font-weight: 600; }
+.meter { height: 6px; border-radius: 3px; background: var(--rule); overflow: hidden; }
+.meter i { display: block; height: 100%; transform-origin: left; transition: background-color var(--t-hover) ease; }
+.score .pct { transition: color var(--t-hover) ease; }
+
+.t-ai { color: var(--accent); } .b-ai { background: var(--accent); }
+.t-mid { color: var(--amber); } .b-mid { background: var(--amber-bar); }
+.t-human { color: var(--green); } .b-human { background: var(--green-bar); }
+
+h2 { font-size: 16px; font-weight: 600; }
+h2.sub { font-size: 14px; margin-top: 8px; }
+h2:focus { outline: none; }
+h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.quotes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.quotes li { padding: 8px 10px; border-radius: var(--radius); background: var(--tint); font-size: 14px; }
+.quotes q { padding: 1px 0; font-style: italic; }
+.quotes .why { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+
+.rewrite { white-space: pre-wrap; background: var(--tint); border-radius: var(--radius); padding: 12px; font-size: 15px; line-height: 1.6; }
+
+.settings { gap: 10px; padding-top: 4px; }
+.settings code { font-size: 12.5px; background: var(--tint); padding: 1px 4px; border-radius: 4px; }
+
+footer#quota { padding: 10px 14px 14px; }
+footer#quota:empty { display: none; }

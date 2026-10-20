@@ -1,0 +1,91 @@
+/* p3n colours, the same tokens as p3n.si and the Chrome extension. */
+:root {
+  --paper: #fbfaf7;
+  --ink: #16130f;
+  --muted: #6b645a;
+  --tint: #f5f1ea;
+  --rule: #e6e1d8;
+  --accent: #c2410c;
+  --accent-hover: #9a3412;
+  --accent-ink: #9a3412;
+  --amber: #b45309;
+  --amber-bar: #f59e0b;
+  --green: #047857;
+  --green-bar: #059669;
+  --radius: 8px;
+  --highlight: #fcd9c4;
+  /* Motion (taste-skill tokens): enter with ease-out, travel with ease-in-out, never bounce. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.76, 0, 0.24, 1);
+  --t-press: 140ms;
+  --t-hover: 180ms;
+  --t-ui: 240ms;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent-ink); text-underline-offset: 2px; }
+h1, h2, h3 { margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+p { margin: 0; }
+
+.small { font-size: 13px; line-height: 1.45; }
+.muted { color: var(--muted); }
+.strong { font-weight: 600; }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.between { justify-content: space-between; }
+.push { margin-left: auto; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 0; border-radius: var(--radius); padding: 8px 14px;
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: transform var(--t-press) var(--ease-out), background-color var(--t-hover) ease, color var(--t-hover) ease;
+}
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.btn.accent { background: var(--accent); color: #fff; }
+.btn.ink { background: var(--ink); color: var(--paper); }
+.btn.ghost { background: var(--tint); color: var(--ink); }
+.btn.ok, .btn.ok:disabled { background: var(--green); color: #fff; opacity: 1; cursor: default; }
+.btn .tick { width: 14px; height: 14px; flex: none; }
+.tick path { stroke-dasharray: 20; stroke-dashoffset: 20; animation: tick 320ms var(--ease-out) 60ms forwards; }
+@keyframes tick { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .tick path { animation: none; stroke-dashoffset: 0; } }
+@media (hover: hover) {
+  .btn.accent:not(:disabled):hover { background: var(--accent-hover); }
+  .btn.ink:not(:disabled):hover { background: #000; }
+  .btn.ghost:not(:disabled):hover { background: var(--rule); }
+  .link:hover { color: var(--accent-hover); }
+}
+.link {
+  background: none; border: 0; padding: 0; font: inherit; cursor: pointer;
+  color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px;
+  transition: color var(--t-hover) ease;
+}
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.field, textarea, input[type="text"], input[type="password"] {
+  width: 100%; border: 0; border-radius: var(--radius); background: var(--tint);
+  color: var(--ink); font: inherit; padding: 10px 12px;
+}
+textarea { resize: vertical; min-height: 96px; line-height: 1.5; }
+textarea::placeholder, input::placeholder { color: var(--muted); }
+
+.note { border-radius: var(--radius); padding: 10px 12px; background: var(--tint); }
+.note.warn { background: #fef3c7; color: #78350f; }
+.note.error { background: #fde8e1; color: #7c2d12; }
+.note.ok { background: #e7f5ee; color: #065f46; }
+
+/* The parts the browser draws carry the palette too. */
+::selection { background: var(--highlight); color: var(--ink); }
+textarea, input { caret-color: var(--accent); }
+html { scrollbar-color: var(--rule) transparent; scrollbar-width: thin; }

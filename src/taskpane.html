@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- The pane talks to api.p3n.si and nothing else; Office.js comes from Microsoft's CDN. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://appsforoffice.microsoft.com; connect-src 'self' https://api.p3n.si; img-src 'self' data:; style-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>p3n</title>
+  <link rel="icon" href="assets/icon-32.png">
+  <link rel="stylesheet" href="ui/base.css">
+  <link rel="stylesheet" href="ui/pane.css">
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="https://p3n.si" data-external>
+      <img src="assets/icon-32.png" width="22" height="22" alt="">
+      <span class="wordmark">p<span>3</span>n</span>
+    </a>
+    <button type="button" id="account" class="link small" aria-controls="settings">Add API key</button>
+  </header>
+
+  <main id="main">
+    <section class="input">
+      <div class="row between">
+        <label for="text" class="small strong">Text</label>
+        <span id="count" class="small muted"></span>
+      </div>
+      <textarea id="text" rows="6" spellcheck="false" placeholder="Select text in your document and click Use selection. Or paste it here."></textarea>
+      <div class="row">
+        <button type="button" id="check" class="btn accent">Check for AI</button>
+        <button type="button" id="rewrite" class="btn ink">Rewrite</button>
+        <button type="button" id="grab" class="link small push" hidden>Use selection</button>
+      </div>
+      <p id="hint" class="small muted" hidden></p>
+    </section>
+
+    <section id="busy" class="busy" hidden>
+      <div class="progress"><i></i></div>
+      <div class="row between">
+        <span id="busy-text" class="small muted" role="status"></span>
+        <button type="button" id="cancel" class="link small">Cancel</button>
+      </div>
+    </section>
+
+    <section id="result" aria-live="polite"></section>
+  </main>
+
+  <section id="settings" class="settings" hidden aria-labelledby="settings-title">
+    <div class="row between">
+      <h2 id="settings-title" tabindex="-1">API key</h2>
+      <button type="button" id="back" class="link small">Done</button>
+    </div>
+    <p class="small">Without a key, p3n gives you 10 calls an hour, up to 5,000 characters each. For more, <a href="https://p3n.si/register" data-external>sign up</a> (you get free credit), create a key on the <a href="https://p3n.si/dashboard/keys" data-external>API keys</a> page and paste it here.</p>
+    <label for="key" class="small strong">Your key</label>
+    <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="p3n_…" aria-describedby="key-status">
+    <div class="row">
+      <span class="small muted">Saved as soon as p3n accepts it.</span>
+      <button type="button" id="remove" class="btn ghost push">Remove key</button>
+    </div>
+    <p id="key-status" class="note small" hidden></p>
+
+    <h2 class="sub">What p3n sends</h2>
+    <p class="small">Only the text you choose, and only when you click Check or Rewrite. It goes to <code>api.p3n.si</code> and nowhere else. The pane looks at your selection only to count its words, keeps no history and has no analytics.</p>
+    <p class="small">Your key stays on this device, in the add-in's own storage. It's never saved inside the document, so it doesn't travel with a file you share.</p>
+  </section>
+
+  <footer id="quota" class="small muted"></footer>
+
+  <script type="module" src="taskpane.js"></script>
+</body>
+</html>

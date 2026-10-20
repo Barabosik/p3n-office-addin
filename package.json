@@ -1,0 +1,20 @@
+{
+  "name": "p3n-word",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "p3n for Microsoft Word: check selected text for AI and rewrite it so it doesn't read as AI, in a task pane.",
+  "scripts": {
+    "serve": "node dev/server.mjs",
+    "start": "office-addin-debugging start manifest.xml desktop --app word --no-debug --dev-server \"node dev/server.mjs\" --dev-server-port 3000",
+    "stop": "office-addin-debugging stop manifest.xml",
+    "validate": "office-addin-manifest validate manifest.xml",
+    "e2e": "node dev/e2e.mjs"
+  },
+  "devDependencies": {
+    "office-addin-debugging": "7.0.1",
+    "office-addin-dev-certs": "3.0.1",
+    "office-addin-manifest": "3.0.1",
+    "puppeteer-core": "25.12.0"
+  }
+}
