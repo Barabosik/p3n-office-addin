@@ -386,10 +386,14 @@ function renderHumanize(o, sent) {
   }
   buttons.push(copyBtn, h('button', { type: 'button', class: 'link small push', onclick: () => start('humanize', sent, { fresh: true }) }, 'Try another rewrite'));
 
+  // "No longer" and "Still" only when the detector model put the text sent in the AI class: it can score
+  // text at 0% that Check called likely AI, and "No longer reads as AI, 0% → 2%" reads wrong.
   const before = o.ai_before != null ? pct(o.ai_before) : pct(o.ai_after);
+  const wasAI = o.ai_before != null && o.ai_before >= 0.5;
+  const headline = o.passes ? (wasAI ? 'No longer reads as AI' : "Doesn't read as AI") : (wasAI ? 'Still reads as AI' : 'Reads as AI');
   const parts = [
     h('div', { class: 'score', 'data-from': before, 'data-to': pct(o.ai_after), 'data-tone': t },
-      h('div', {}, h('p', { class: 'label' }, o.passes ? 'No longer reads as AI' : 'Still reads as AI'),
+      h('div', {}, h('p', { class: 'label' }, headline),
         h('p', { class: 'small muted' }, `Detector model: ${LABELS[o.label_after] ?? 'unknown'}`)),
       h('p', { class: `pct t-${t}`, title: 'Detector model, AI class' },
         o.ai_before != null ? h('span', { class: 'from' }, `${before}% → `) : null,

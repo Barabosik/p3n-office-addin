@@ -1,5 +1,7 @@
 # Submitting to AppSource
 
+**Later.** For now the add-in installs from its manifest (option C below). Listing it on AppSource needs a Microsoft work account and a company profile first, so option A or B.
+
 How to list p3n for Word and Excel in Microsoft Marketplace (AppSource) through Partner Center. **[user]** marks a step only the account holder can do: signing in, account details and legal choices. **[lead]** marks the rest. The text to paste is in [listing.md](listing.md). Microsoft says a review takes up to four weeks and often more than one round.
 
 Checked against Microsoft Learn on 2026-10-20 (sources at the end).

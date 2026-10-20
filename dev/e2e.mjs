@@ -29,7 +29,7 @@ const P7 = 'In summary, the numbers speak for themselves.';
 const BOOK = { [SHEET]: { A1: 'Notes', B1: 'Hours', A2: P1, B2: 12, A3: P2, B3: 30, A4: P3, B4: { v: 'Owner: Maja', f: '="Owner: "&"Maja"' }, A7: P7 } };
 
 // ---- canned API answers ------------------------------------------------------------------------
-const mock = { calls: [], auth: [], pages: [], humanizeBlocks: null, status: null, long: false };
+const mock = { calls: [], auth: [], pages: [], humanizeBlocks: null, humanizeScores: null, status: null, long: false };
 // P7's rewrite starts with a minus sign, which Excel would read as the start of a formula.
 const REWRITES = { [P1]: 'Good tools help a team talk. Which ones? That depends on the team.', [P3]: 'It works for teams of any size.', 'seamless transition': 'move', [P7]: '-30% hours, as planned.' };
 const rewriteOf = (p) => REWRITES[p] ?? p.split(' ').slice(0, 8).join(' ') + '.';
@@ -55,7 +55,7 @@ function answer(url, body) {
     if (mock.humanizeBlocks) paras = [paras.slice(0, -1).join(' '), paras.at(-1)].slice(0, mock.humanizeBlocks);
     // The live API ends the rewrite with a line break; the pane must not turn it into a paragraph.
     return { status: 200, headers: free, body: { id: 'mock-humanize', skill: 'humanize', status: 'succeeded', cached: false, error: null, charged_usd: '0',
-      output: { version: 'humanize-v1.1', model: 'haiku', text: paras.join('\n\n') + '\n', ai_before: 0.88, ai_after: 0.06, label_after: 'human', passes: true, invented_blocked: [] } } };
+      output: { version: 'humanize-v1.1', model: 'haiku', text: paras.join('\n\n') + '\n', ai_before: 0.88, ai_after: 0.06, label_after: 'human', passes: true, invented_blocked: [], ...mock.humanizeScores } } };
   }
   return { status: 404, body: { error: { type: 'not_found', message: 'No such endpoint.' } } };
 }
@@ -183,6 +183,7 @@ const SCENARIOS = {
     const rewrite = await page.$eval('#result .rewrite', (r) => r.textContent).catch(() => null);
     ok('replace: the rewrite shows, without the trailing line break', !!rewrite && rewrite === rewrite.trim(), JSON.stringify(rewrite?.slice(-20)));
     ok('replace: Replace is offered', await hasButton(page, 'Replace in document'));
+    ok('replace: "No longer reads as AI" when the text sent scored as AI', (await page.$eval('.score .label', (n) => n.textContent)) === 'No longer reads as AI');
     await new Promise((r) => setTimeout(r, 1300));
     await page.screenshot({ path: path.join(OUT, 'pane-rewrite.png'), fullPage: true });
     await replaceNow(page);
@@ -205,6 +206,31 @@ const SCENARIOS = {
       await replaceNow(page);
       ok('replace: still one paragraph there', (await docParas(page)).length === DOC.length);
     }
+    await page.close();
+  },
+
+  // The headline says "No longer" or "Still" only when the detector model put the text sent in the AI class
+  // (ai_before >= 0.5). It can score text at 0% that Check called likely AI.
+  async headline() {
+    if (LIVE) return;
+    const page = await openPane({ name: 'headline' });
+    await boot(page);
+    const cases = [
+      [{ ai_before: 0.88, ai_after: 0.06, passes: true }, 'No longer reads as AI'],
+      [{ ai_before: 0.02, ai_after: 0.03, passes: true }, "Doesn't read as AI"],
+      [{ ai_before: 0.88, ai_after: 0.71, passes: false, label_after: 'ai' }, 'Still reads as AI'],
+      [{ ai_before: 0.3, ai_after: 0.62, passes: false, label_after: 'ai' }, 'Reads as AI'],
+      [{ ai_before: null, ai_after: 0.04, passes: true }, "Doesn't read as AI"],
+    ];
+    for (const [i, [scores, want]] of cases.entries()) {
+      mock.humanizeScores = scores;
+      // A different text each time, so no answer comes from the pane's cache.
+      await page.evaluate((t) => { const x = document.querySelector('#text'); x.value = t; x.dispatchEvent(new Event('input')); }, `${P2} Case ${i + 1}.`);
+      await run(page, '#rewrite');
+      const label = await page.$eval('.score .label', (n) => n.textContent);
+      ok(`headline: "${want}" for ai_before ${scores.ai_before}, passes ${scores.passes}`, label === want, label);
+    }
+    mock.humanizeScores = null;
     await page.close();
   },
 
