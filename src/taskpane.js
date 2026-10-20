@@ -13,7 +13,7 @@ const els = {
 const state = { key: apiKey.get(), word: false, source: null, controller: null, timer: null, free: freeLeft.get(), selected: null };
 
 // Tiny DOM builder. Strings become text nodes, so API text is never parsed as HTML. Styles go through
-// the CSSOM, which the pane's content security policy allows (style attributes it doesn't).
+// the CSSOM rather than style attributes.
 function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -91,6 +91,12 @@ function runScore(root) {
     }
   };
   requestAnimationFrame(step);
+}
+
+// Word's pane is short: a result that lands below the fold scrolls up into view, so the score and
+// Replace are seen without hunting for them.
+function reveal(el) {
+  if (el.getBoundingClientRect().top > innerHeight * 0.55) el.scrollIntoView({ block: 'start', behavior: calm.matches ? 'auto' : 'smooth' });
 }
 
 // Result parts arrive in reading order.
@@ -245,6 +251,7 @@ function render(run, text) {
   const box = stagger(h('div', { class: 'result-in stack' }, body, meta));
   els.result.replaceChildren(box);
   runScore(box);
+  reveal(els.result);
 }
 
 // The big number: animated for the eye, stated once for screen readers (the result is a live region).
@@ -388,6 +395,7 @@ function showError(e) {
       kids.push(h('p', {}, e.message || 'Something went wrong.'));
   }
   els.result.replaceChildren(stagger(h('div', { class: 'note error result-in stack tight' }, kids)));
+  reveal(els.result);
 }
 
 // ---- account / quota ---------------------------------------------------------------------

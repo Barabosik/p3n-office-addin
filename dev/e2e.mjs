@@ -301,12 +301,14 @@ const SCENARIOS = {
     await page.close();
   },
 
-  // Reduced motion: the final state shows at once.
+  // Reduced motion: the final state shows at once. In a short pane (Word's, at 125% scaling) the result
+  // scrolls into view.
   async calm() {
-    const page = await openPane({ name: 'calm', calm: true });
+    const page = await openPane({ name: 'calm', calm: true, height: 560 });
     await boot(page, [P1]);
     await run(page, '#check');
     ok('calm: reduced motion shows the final score at once', await page.evaluate(scoreSettled));
+    ok('calm: a result below the fold scrolls into view', await page.evaluate(() => { const r = document.querySelector('.score').getBoundingClientRect(); return scrollY > 0 && r.top >= 0 && r.bottom <= innerHeight; }));
     await page.close();
   },
 

@@ -24,7 +24,7 @@ textarea.arrived { animation: arrive 900ms var(--ease-out); }
 
 /* The result: parts arrive in reading order (--i is set in taskpane.js), the score runs, flagged sentences get
    highlighted like a pen stroke, and a rewrite wipes in. */
-#result { display: flex; flex-direction: column; gap: 14px; }
+#result { display: flex; flex-direction: column; gap: 14px; scroll-margin-top: 12px; }
 #result:empty { display: none; }
 .result-in > * { animation: rise var(--t-ui) var(--ease-out) both; animation-delay: calc(min(var(--i, 0), 6) * 50ms); }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }

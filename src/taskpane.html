@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- The pane talks to api.p3n.si and nothing else; Office.js comes from Microsoft's CDN. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://appsforoffice.microsoft.com; connect-src 'self' https://api.p3n.si; img-src 'self' data:; style-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <!-- The pane talks to api.p3n.si and nothing else; scripts come from here and Microsoft's Office.js CDN.
+       Inline styles are allowed because Word's host script (word-win32-16.01.js) sets some as it loads. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://appsforoffice.microsoft.com; connect-src 'self' https://api.p3n.si; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>p3n</title>
   <link rel="icon" href="assets/icon-32.png">
   <link rel="stylesheet" href="ui/base.css">
