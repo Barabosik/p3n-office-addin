@@ -1,6 +1,7 @@
 // Live run in Word for Windows: sideloads the add-in with Microsoft's office-addin-debugging, writes a test
 // document through Word's COM interface, and drives the real task pane over WebView2's debugging port
-// (--debug-method direct opens it on 9229). Undo is a real Ctrl+Z keystroke in the document.
+// (opened on 9229 through WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS). Undo is a real Ctrl+Z keystroke when Word
+// is in front. Screenshots are of Word's own window, so nothing else on the screen gets in.
 //   node dev/word-live.mjs         one Check and one Rewrite against the live API (2 of the 10 free calls an hour)
 //   MOCK=1 node dev/word-live.mjs  canned API answers; adds the multi-paragraph and changed-text cases
 //   KEEP=1                         leave Word and the dev server running afterwards
@@ -21,7 +22,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // One PowerShell call per step; each prints JSON. Word is found with GetActiveObject.
 function ps(script) {
   const prelude = `$ErrorActionPreference='Stop'; $w=[Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application'); $d=$w.ActiveDocument;`;
-  const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', `${prelude} ${script}`], { encoding: 'utf8' });
+  // A modal dialog in Word blocks COM; give up after a minute rather than hang.
+  const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', `${prelude} ${script}`], { encoding: 'utf8', timeout: 60000 });
+  if (r.error) throw new Error(`PowerShell: ${r.error.message} (is a dialog open in Word?)`);
   if (r.status !== 0) throw new Error(`PowerShell: ${r.stderr.trim().split('\n')[0]}`);
   const out = r.stdout.trim();
   return out ? JSON.parse(out) : null;
@@ -43,23 +46,28 @@ function writeDocument() {
       $d.Paragraphs(4).Range.ListFormat.ApplyBulletDefault(); $d.UndoClear(); 'true'`);
 }
 
-// A real Ctrl+Z: focus the document body (not the pane), then send the keystroke to Word.
-function ctrlZ() {
-  return ps(`$w.Activate(); $w.ActiveWindow.SetFocus(); Start-Sleep -Milliseconds 300;
-    $sh = New-Object -ComObject WScript.Shell; [void]$sh.AppActivate($w.ActiveWindow.Caption + ' - Word'); Start-Sleep -Milliseconds 300;
-    Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^z'); Start-Sleep -Milliseconds 500; 'true'`);
+// Ctrl+Z as a real keystroke, but only into Word: if Word isn't the foreground window (Windows won't hand
+// focus to a background process while you use the PC), it runs Word's Undo command instead, which is the
+// command Ctrl+Z is bound to, and says so. Keys never go to another window.
+const WIN32 = `Add-Type -Namespace P3n -Name U -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h); [DllImport("user32.dll")] public static extern bool PrintWindow(System.IntPtr h, System.IntPtr dc, uint f); [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r); [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int c); [DllImport("user32.dll")] public static extern bool SetWindowPos(System.IntPtr h, System.IntPtr a, int x, int y, int cx, int cy, uint f); public struct RECT { public int L, T, R, B; }'; $h=[System.IntPtr]$w.ActiveWindow.Hwnd;`;
+function undo() {
+  return ps(`${WIN32} $w.Activate(); [void][P3n.U]::SetForegroundWindow($h); Start-Sleep -Milliseconds 400;
+    if ([P3n.U]::GetForegroundWindow() -eq $h) {
+      $w.ActiveWindow.SetFocus(); Start-Sleep -Milliseconds 200;
+      if ([P3n.U]::GetForegroundWindow() -eq $h) { Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^z'); Start-Sleep -Milliseconds 600; '"Ctrl+Z keystroke"'; return }
+    }
+    $w.CommandBars.ExecuteMso('Undo'); Start-Sleep -Milliseconds 400; '"Word Undo command (Word was not in front, so no keystroke)"'`);
 }
 
-// Places Word at a fixed size on the primary screen and saves a PNG of the window (physical pixels).
+// Word at a fixed size, placed without taking focus from what you're using.
 function placeWord() {
-  ps(`Add-Type -Namespace P3n -Name U -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern bool SetWindowPos(System.IntPtr h, System.IntPtr a, int x, int y, int cx, int cy, uint f); [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int c);';
-      [void][P3n.U]::SetProcessDPIAware(); $w.WindowState = 0; $h=[System.IntPtr]$w.ActiveWindow.Hwnd;
-      [void][P3n.U]::ShowWindow($h, 9); [void][P3n.U]::SetWindowPos($h, [System.IntPtr]::Zero, 40, 40, 1600, 1000, 0x0040); $w.Activate(); 'true'`);
+  ps(`${WIN32} [void][P3n.U]::SetProcessDPIAware(); $w.WindowState = 0; [void][P3n.U]::ShowWindow($h, 4);
+      [void][P3n.U]::SetWindowPos($h, [System.IntPtr]::Zero, 40, 40, 1600, 1000, 0x0014); 'true'`);
 }
+// A PNG of Word's own window (PrintWindow), whatever is on top of it: other windows never get in.
 function shootWord(file) {
-  ps(`Add-Type -Namespace P3n -Name S -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r); public struct RECT { public int L, T, R, B; }';
-      Add-Type -AssemblyName System.Drawing; [void][P3n.S]::SetProcessDPIAware(); $h=[System.IntPtr]$w.ActiveWindow.Hwnd; $r = New-Object P3n.S+RECT; [void][P3n.S]::GetWindowRect($h, [ref]$r);
-      $b = New-Object System.Drawing.Bitmap ($r.R-$r.L), ($r.B-$r.T); $g=[System.Drawing.Graphics]::FromImage($b); $g.CopyFromScreen($r.L, $r.T, 0, 0, $b.Size);
+  ps(`${WIN32} Add-Type -AssemblyName System.Drawing; [void][P3n.U]::SetProcessDPIAware(); Start-Sleep -Milliseconds 400; $r = New-Object P3n.U+RECT; [void][P3n.U]::GetWindowRect($h, [ref]$r);
+      $b = New-Object System.Drawing.Bitmap ($r.R-$r.L), ($r.B-$r.T); $g=[System.Drawing.Graphics]::FromImage($b); $dc=$g.GetHdc(); [void][P3n.U]::PrintWindow($h, $dc, 2); $g.ReleaseHdc($dc);
       $b.Save('${path.join(OUT, file).replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Png); 'true'`);
 }
 
@@ -68,10 +76,14 @@ const running = spawnSync('powershell', ['-NoProfile', '-Command', '@(Get-Proces
 if (running !== '0') { console.error('Close Word first: the run starts its own Word with the add-in sideloaded.'); process.exit(2); }
 await mkdir(OUT, { recursive: true });
 
-const npx = (args) => spawn('npx', args, { cwd: ROOT, shell: true, stdio: 'inherit' });
+// WebView2 reads extra browser arguments from the environment of the app that hosts it, so Word, started
+// from here, opens its panes with a debugging port. (--debug-method direct does the same but stops each
+// pane at a "WebView Stop On Load" dialog until you click OK.)
+const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9229' };
+const npx = (args) => spawn('npx', args, { cwd: ROOT, shell: true, stdio: 'inherit', env });
 const exited = (p) => new Promise((r) => p.on('exit', r));
 console.log('Sideloading with office-addin-debugging…');
-await exited(npx(['office-addin-debugging', 'start', 'manifest.xml', 'desktop', '--app', 'word', '--debug-method', 'direct', '--dev-server', '"node dev/server.mjs"', '--dev-server-port', '3000']));
+await exited(npx(['office-addin-debugging', 'start', 'manifest.xml', 'desktop', '--app', 'word', '--no-debug', '--dev-server', '"node dev/server.mjs"', '--dev-server-port', '3000']));
 
 let browser;
 const errors = [];
@@ -90,7 +102,9 @@ try {
   const page = await target.page();
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.waitForFunction(() => !document.querySelector('#grab').hidden, { timeout: 30000 });
+  // Word sometimes navigates the pane once more while the document opens; give it one reload if so.
+  const booted = () => page.waitForFunction(() => !document.querySelector('#grab')?.hidden, { timeout: 30000 }).then(() => true, () => false);
+  if (!(await booted())) { await page.reload(); await booted(); }
   ok('the pane loads Office.js and finds Word (WordApi 1.3)', true, await page.evaluate(() => `${Office.context.diagnostics.host} ${Office.context.diagnostics.platform} ${Office.context.diagnostics.version}`));
 
   if (MOCK) {
@@ -154,9 +168,9 @@ try {
     ok('the list paragraph keeps its style and bullet', JSON.stringify(afterStyles) === JSON.stringify(styles) && ps(`$d.Paragraphs(4).Range.ListFormat.ListType`) !== 0, JSON.stringify(afterStyles));
     ok('Replace reports success', /Replaced/.test(await status()), await status());
     shootWord('word-replaced.png');
-    ctrlZ();
+    const how = undo();
     const undone = wordParas();
-    ok('one Ctrl+Z in the document undoes the Replace', JSON.stringify(undone) === JSON.stringify(original), JSON.stringify(undone[3]?.slice(0, 40)));
+    ok('one undo in the document reverts the Replace', JSON.stringify(undone) === JSON.stringify(original), `${how}; ${JSON.stringify(undone[3]?.slice(0, 40))}`);
   }
 
   if (MOCK) {
@@ -169,9 +183,9 @@ try {
     const after = wordParas();
     ok('three paragraphs are replaced one by one', JSON.stringify(after) === JSON.stringify([TITLE, 'Rewritten paragraph 1.', 'Rewritten paragraph 2.', 'Rewritten paragraph 3.']), JSON.stringify(after));
     ok('each paragraph keeps its style', JSON.stringify(wordStyles()) === JSON.stringify(styles), JSON.stringify(wordStyles()));
-    ctrlZ();
+    const how = undo();
     const undone = wordParas();
-    ok('one Ctrl+Z undoes all three', JSON.stringify(undone) === JSON.stringify(original), JSON.stringify(undone.map((p) => p.slice(0, 20))));
+    ok('one undo reverts all three', JSON.stringify(undone) === JSON.stringify(original), `${how}; ${JSON.stringify(undone.map((p) => p.slice(0, 20)))}`);
 
     // 4. The text is edited in Word after it was taken: Replace refuses.
     writeDocument();
@@ -198,6 +212,7 @@ try {
   if (!process.env.KEEP) {
     try { ps(`$d.Saved = $true; $w.Quit(0); 'true'`); } catch { /* already closed */ }
     await exited(npx(['office-addin-debugging', 'stop', 'manifest.xml']));
+    await exited(npx(['office-addin-dev-settings', 'runtime-log', '--disable'])); // start turns it on; stop leaves it
   }
 }
 const failed = results.filter((r) => !r.pass);

@@ -24,7 +24,7 @@ The key is stored in the pane's own browser storage (`localStorage`) on this dev
 
 ## What it sends
 
-Only the text you choose, and only when you click Check or Rewrite. It goes to `api.p3n.si` and nowhere else; the pane's content security policy allows no other connection. The pane reads your selection locally to count its words for the **Use selection** link. It keeps no history and has no analytics.
+Only the text you choose, and only when you click Check or Rewrite. It goes to `api.p3n.si` and nowhere else; the pane's content security policy allows no other connection. The pane reads your selection locally to count its words for the **Use selection** link. It keeps no history and has no analytics. Office.js (Microsoft's library, from Microsoft's CDN) talks to Word directly. In the runs in Word it tried no network connection from the pane; the policy would have blocked and logged one.
 
 ## Permissions
 
@@ -82,16 +82,29 @@ On the web: while `npm run serve` runs on the same machine, open a document, cho
 
 `dev/` isn't part of the add-in.
 
-**Headless, every run** (`npm run e2e`): opens the pane in headless Chrome with `dev/office-stub.js` in place of Office.js. The stub is a small Word: one document with paragraph styles, live ranges that move with edits, and Word's rules that a property is readable only after `load()` and `sync()`, and that a range is reusable in a later `Word.run` only if it was tracked. The API answers with canned runs, so no free calls are spent. 40 checks:
+**Headless, every run** (`npm run e2e`): opens the pane in headless Chrome with `dev/office-stub.js` in place of Office.js. The stub is a small Word: one document with paragraph styles, live ranges that move with edits, and Word's rules that a property is readable only after `load()` and `sync()`, and that a range is reusable in a later `Word.run` only if it was tracked. The API answers with canned runs, so no free calls are spent. 41 checks:
 
 - the selection arrives when the pane opens, and nothing is sent before a click;
 - Check and Rewrite render (score count, highlighter, rewrite wipe), and reduced motion shows the end state at once;
 - Replace: the rewrite lands in place, the other paragraphs and every style stay, no paragraph is added; it lands correctly after edits above it; it refuses when the text changed, over a table, and for text edited in the pane; a merged rewrite leaves no empty paragraph; a double-clicked word keeps its space;
-- the whole document when nothing is selected; the 5,000-character limit without a key; the free-limit message; the API key check-then-save, Escape and focus; no console errors, and no request to anything but `api.p3n.si`.
+- the whole document when nothing is selected; the 5,000-character limit without a key; the free-limit message; the API key check-then-save, Escape and focus; a result below the fold scrolls into view; no console errors, and no request to anything but `api.p3n.si`.
 
 `LIVE=1 npm run e2e` runs Check and Rewrite against the live API instead (2 of the 10 free calls an hour). `ONLY=replace,moved` runs some scenarios.
 
-**In Word** (`node dev/word-live.mjs`, with Word closed): sideloads with `office-addin-debugging --debug-method direct`, writes a test document through Word's COM interface, and drives the real pane over WebView2's debugging port. It checks Use selection, Check and Rewrite against the live API (2 free calls), Replace on a bulleted paragraph, and a real Ctrl+Z keystroke in the document. With `MOCK=1` it answers with canned runs and adds the three-paragraph replace with one Ctrl+Z, the changed-text refusal and text that moved. Screenshots land in `dev/out/`.
+**In Word** (`node dev/word-live.mjs`, with Word closed):
+- How it works: it sideloads with `office-addin-debugging`, and starts Word with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9229` so the real pane can be driven over that port. It writes a test document through Word's COM interface.
+- What it checks: Use selection, Check and Rewrite against the live API (2 free calls), Replace on a bulleted list paragraph, and undo.
+- `MOCK=1` answers with canned runs and adds three cases: replacing three paragraphs at once (each keeps its style, one undo reverts all three), the changed-text refusal, and text that moved.
+- Undo: a real Ctrl+Z keystroke when Word is the foreground window. If you're using another window at the time, it runs Word's Undo command instead (the command Ctrl+Z triggers) and says which it used. Keys never go to another window.
+- Screenshots: of Word's own window (PrintWindow), saved to `dev/out/`.
+
+Results on 2026-10-20, Word for Microsoft 365 on Windows 11, build 16.0.20430.20182:
+- live API: 13/13 pass, including a real Ctrl+Z keystroke undoing the Replace in one step;
+- `MOCK=1`: all cases pass; the three-paragraph Replace also undoes in one step.
+
+Word's host script (`word-win32-16.01.js`) sets inline styles while it loads, so the pane's content security policy allows inline styles. Scripts and connections stay locked down.
+
+Not tested: Word on the web (needs a Microsoft sign-in in a browser) and Word on Mac.
 
 ## Files
 
