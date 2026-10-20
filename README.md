@@ -16,7 +16,7 @@
   <a href="https://github.com/Barabosik/p3n-office-addin/actions/workflows/ci.yml"><img src="https://github.com/Barabosik/p3n-office-addin/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
-![Check for AI in Word](docs/word-check.png)
+![Check for AI in Word](store/screenshot-word-check.png)
 
 ## What it does
 
@@ -24,7 +24,7 @@
 - **Rewrite.** A version that keeps your facts and drops the filler. **Replace** puts it back where it came from. In Word that's your selection, and each paragraph keeps its style. In Excel it's the cell. Ctrl+Z undoes it.
 - Open it from **Check for AI** on the Home tab, or **Check with p3n** in the right-click menu.
 
-![Rewrite and Replace in Excel](docs/excel-replaced.png)
+![Rewrite and Replace in Excel](store/screenshot-excel-replace.png)
 
 ## Free, or with a key
 

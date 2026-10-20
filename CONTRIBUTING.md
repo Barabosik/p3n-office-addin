@@ -32,7 +32,7 @@ MOCK=1 node dev/live.mjs word
 MOCK=1 node dev/live.mjs excel
 ```
 
-It sideloads the add-in, writes a test document or sheet over COM, drives the pane through WebView2's debugging port, and checks Replace and undo. Without `MOCK=1` it uses two free calls. Screenshots go to `dev/out/`.
+It sideloads the add-in, writes a test document or sheet over COM, drives the pane through WebView2's debugging port, and checks Replace and undo. It never takes focus from what you're doing. Without `MOCK=1` it uses two free calls. Screenshots go to `dev/out/`. `MANIFEST=manifest.xml` runs the published add-in, with its pane from GitHub Pages.
 
 ## Run it
 
@@ -43,4 +43,6 @@ Once, first: `npx office-addin-dev-certs install` makes a certificate for `local
 1. Raise the version in `package.json` and in `manifest.xml` (`<Version>` has four parts), then run `npm run manifest` and `npm run validate`.
 2. Push to `main`. CI runs the tests, and the Pages workflow deploys `src/` and `manifest.xml` to `https://barabosik.github.io/p3n-office-addin/` once they pass.
 
-Office loads the pane from Pages each time it opens, so a deploy reaches everyone. A change to the manifest reaches people only when they install it again or the store copy is updated. The add-in's Id can't change once it's on AppSource. The store copy is in `store/listing.md`, and `python dev/icons.py` builds the icons.
+Office loads the pane from Pages each time it opens, so a deploy reaches everyone. A change to the manifest reaches people only when they install it again or the store copy is updated. The add-in's Id can't change once it's on AppSource. The store copy is in `store/listing.md`, and the submission steps are in `store/partner-center-steps.md`. `python dev/icons.py` builds the icons.
+
+Store screenshots: `SHOTS=1 MANIFEST=manifest.xml node dev/live.mjs excel` takes the Excel ones with one live call, and the same with `word` takes a Check and a Rewrite in Word with two. Then `python dev/store-shots.py` writes the 1366×768 images to `store/`. `RECORD=1` saves the live answers to `dev/out/`, and `REPLAY=1` reuses them for the same text instead of calling the API.

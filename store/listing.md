@@ -1,6 +1,6 @@
 # AppSource listing
 
-What goes into the Partner Center forms for the Office add-in. The package is `manifest.xml`; the pane it points at is on GitHub Pages.
+What goes into the Partner Center forms for the Office add-in. The package is `manifest.xml`, and the pane it points at is on GitHub Pages.
 
 Status: not submitted yet.
 
@@ -17,7 +17,7 @@ Select text in Word, or cells in Excel, and click Check for AI on the Home tab. 
 
 Check for AI: a score, a short reason, and the sentences that read as AI.
 
-Rewrite: a new version that keeps your facts and drops the filler. In Word, Replace puts it over your selection and keeps each paragraph's style. In Excel, it goes back into the cell. Ctrl+Z undoes it.
+Rewrite: a new version that keeps your facts and drops the filler. In Word, Replace puts it over your selection and keeps your headings, lists and other paragraph styles. In Excel, it goes back into the cell. Ctrl+Z undoes it.
 
 Free to try: without an account you get 10 checks or rewrites an hour, up to 5,000 characters each. For more, add an API key from p3n.si.
 
@@ -28,23 +28,25 @@ Open source: https://github.com/Barabosik/p3n-office-addin
 
 ## Fields
 
+These are Partner Center's names for them. The order to fill them in is in [partner-center-steps.md](partner-center-steps.md).
+
 | Field | Value |
 | --- | --- |
-| Name | p3n |
-| Categories | Productivity, Utilities |
+| Name (up to 50 characters) | p3n, the same as the manifest's `DisplayName` |
+| Publisher | must match the manifest's `ProviderName`, now "Nikita Andreiev" |
+| Categories (1 to 3) | Productivity, Utilities |
 | Search keywords | AI detector, humanize, writing |
-| Privacy policy | https://github.com/Barabosik/p3n-office-addin/blob/main/PRIVACY.md (p3n's own: https://p3n.si/privacy) |
-| Terms of use | https://p3n.si/terms |
-| Support | https://github.com/Barabosik/p3n-office-addin/issues |
-| Website | https://p3n.si |
+| Legal | Standard Contract, the user's choice (see the steps) |
+| Privacy policy link | https://github.com/Barabosik/p3n-office-addin/blob/main/PRIVACY.md (p3n's own: https://p3n.si/privacy) |
+| Support document link | https://github.com/Barabosik/p3n-office-addin/issues |
 | Logo | `store/logo-300.png` (300×300) |
-| Screenshots | 1366×768, from `docs/` (to make) |
-| Additional purchases | No: it works without an account; an API key from p3n.si raises the limits. |
+| Screenshots (1366×768, up to 1024 KB) | `screenshot-word-check.png`, `screenshot-word-replace.png`, `screenshot-excel-replace.png`, made by `python dev/store-shots.py` |
+| Additional purchases | Yes. It works without an account, but more than 10 calls an hour needs paid p3n credit, and the description says so. |
 
 ## Notes for certification
 
 ```
-No account is needed. In Word: select a paragraph, then Home > Check for AI, and click Check for AI or Rewrite in the pane. In Excel: select a cell with text and do the same; Replace writes the rewrite back into that cell.
+No account is needed. In Word: select a paragraph, then Home > Check for AI, and click Check for AI or Rewrite in the pane. In Excel: select a cell with text and do the same. Replace writes the rewrite back into that cell.
 
 Calls without an API key are free, 10 an hour per IP, up to 5,000 characters each. If the testers share an IP and hit that limit, the pane says so and when more calls come.
 
