@@ -3,10 +3,11 @@
 # It deploys only after the mocked end-to-end checks pass.
 name: Pages
 
+# Every push to main, not only ones that touch src/: a path filter skips a branch's first push, and a
+# deploy of unchanged files is harmless.
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'manifest.xml', 'dev/**', 'package-lock.json', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
