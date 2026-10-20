@@ -120,3 +120,4 @@ Not tested: Word on the web (needs a Microsoft sign-in in a browser) and Word on
 | `dev/server.mjs` | The HTTPS dev server. |
 | `dev/e2e.mjs`, `dev/office-stub.js` | The headless test and its stand-in for Office.js. |
 | `dev/word-live.mjs` | The run in real Word. |
+| `dev/icons.py` | Builds `src/assets/` from `dev/logo-512.png`. The icons sit on a light tile so they read on Word's dark ribbon too (same approach as the extension). |
