@@ -4,7 +4,8 @@ main, .settings { flex: 1; padding: 0 14px 16px; display: flex; flex-direction: 
 .stack { display: flex; flex-direction: column; gap: 14px; }
 .stack.tight { gap: 8px; }
 
-header.bar { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 10px; }
+header.bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 8px 8px 14px; }
+.bar-end { display: flex; align-items: center; gap: 6px; }
 .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); text-decoration: none; }
 .wordmark { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
 .wordmark span { color: var(--accent-text); }

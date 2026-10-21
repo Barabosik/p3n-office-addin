@@ -3,7 +3,7 @@ import { runSkill, me, setClient, ApiError, LINKS, MAX_CHARS } from './lib/api.j
 import { apiKey, freeLeft } from './lib/store.js';
 import * as word from './lib/word.js';
 import * as excel from './lib/excel.js';
-import { followOfficeTheme } from './lib/theme.js';
+import { followOfficeTheme, themeSwitch } from './lib/theme.js';
 
 const $ = (s) => document.querySelector(s);
 const els = {
@@ -566,6 +566,7 @@ els.remove.addEventListener('click', () => {
 // ---- boot --------------------------------------------------------------------------------
 
 (async () => {
+  themeSwitch();
   refreshInput();
   refreshAccount();
   // Office.js comes from Microsoft's CDN; without it (offline, or the page opened in a browser) the box still works.

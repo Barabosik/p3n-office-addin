@@ -79,7 +79,7 @@ await mkdir(OUT, { recursive: true });
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, pipe: true, args: ['--lang=en-US', ...(process.env.CI ? ['--no-sandbox'] : [])] });
 const errors = [];
 
-async function openPane({ name, width = 320, height = 900, calm = false, key = null, host = 'Word', scheme = 'light', theme = null }) {
+async function openPane({ name, width = 320, height = 900, calm = false, key = null, host = 'Word', scheme = 'light', theme = null, pick = null }) {
   const page = await browser.newPage();
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
   page.on('console', (m) => {
@@ -109,14 +109,18 @@ async function openPane({ name, width = 320, height = 900, calm = false, key = n
     return r.abort();
   });
   // The document or workbook and the user's selection exist before the pane opens.
-  await page.evaluateOnNewDocument((app, d, k, t) => {
+  await page.evaluateOnNewDocument((app, d, k, t, p) => {
     window.__host = app;
     window.__setup = d;
     if (t) window.__theme = t;
-    // Pages share the test origin's storage: each starts with the key it asks for, or none.
+    // Pages share the test origin's storage: each starts with the key and the light or dark it asks for, or none.
     if (k) localStorage.setItem('p3n.apiKey', k);
     else localStorage.removeItem('p3n.apiKey');
-  }, host, host === 'Excel' ? BOOK : DOC, key, theme);
+    if (p) localStorage.setItem('p3n.theme', p);
+    else localStorage.removeItem('p3n.theme');
+    // The theme when <body> appears, before the pane's script has run.
+    new MutationObserver((_, o) => { if (document.body) { window.__firstTheme = document.documentElement.dataset.theme; o.disconnect(); } }).observe(document, { childList: true, subtree: true });
+  }, host, host === 'Excel' ? BOOK : DOC, key, theme, pick);
   return page;
 }
 
@@ -676,6 +680,64 @@ const SCENARIOS = {
     await boot(page, [P1]);
     const t = await paneTheme(page);
     ok('theme: a light Office theme keeps the pane light on a dark system', t.theme === 'light' && t.bg === 'rgb(251, 250, 247)', JSON.stringify(t));
+    await page.close();
+  },
+
+  // The switch: the header button flips between Office's theme and the other one, Office, Light and Dark in the
+  // settings say which, and a pick holds from the first paint when the pane opens again.
+  async switch() {
+    if (LIVE) return;
+    const state = (page) => page.evaluate(() => ({ ...{ theme: document.documentElement.dataset.theme, bg: getComputedStyle(document.body).backgroundColor },
+      stored: localStorage.getItem('p3n.theme') ?? 'office', label: document.querySelector('header [data-theme-toggle]')?.getAttribute('aria-label'),
+      checked: document.querySelector('[data-theme-set][aria-checked="true"]')?.dataset.themeSet }));
+    const toggle = (page) => click(page, 'header [data-theme-toggle]');
+    const still = async (page, file) => { await new Promise((r) => setTimeout(r, 300)); await page.screenshot({ path: path.join(OUT, file) }); };
+
+    // A light Office theme.
+    let page = await openPane({ name: 'switch', height: 560 });
+    await boot(page, [P1]);
+    let t = await state(page);
+    ok('switch: the light/dark button is in the header, Office by default', t.label === 'Switch to dark theme' && t.stored === 'office' && t.theme === 'light', JSON.stringify(t));
+    await still(page, 'pane-switch-light.png');
+    await toggle(page);
+    t = await state(page);
+    ok("switch: a click turns a light Office theme's pane dark (p3n's dark) and saves it", t.theme === 'dark' && t.bg === 'rgb(22, 19, 15)' && t.stored === 'dark' && t.label === 'Switch to light theme', JSON.stringify(t));
+    const dark = await page.evaluate(lowContrast);
+    ok('switch: every text passes AA in the picked dark', !dark.length, dark.join(', '));
+    await still(page, 'pane-switch-dark.png');
+    await toggle(page);
+    t = await state(page);
+    ok("switch: a second click is Office's theme again", t.theme === 'light' && t.stored === 'office', JSON.stringify(t));
+    await page.close();
+
+    // Dark picked, the pane opened again: dark from the first paint.
+    page = await openPane({ name: 'switch', pick: 'dark' });
+    await boot(page, [P1]);
+    t = await state(page);
+    ok('switch: a pick holds when the pane opens again, from the first paint', await page.evaluate(() => window.__firstTheme) === 'dark' && t.theme === 'dark', JSON.stringify(t));
+    await page.close();
+
+    // A dark Office theme: Light from the button, then Office and Dark in the settings.
+    page = await openPane({ name: 'switch', height: 760, theme: officeDark('#262626') });
+    await boot(page, [P1]);
+    await toggle(page);
+    t = await state(page);
+    ok("switch: a click turns a dark Office theme's pane light", t.theme === 'light' && t.bg === 'rgb(251, 250, 247)' && t.stored === 'light', JSON.stringify(t));
+    await click(page, '#account');
+    await page.waitForFunction(() => !document.querySelector('#settings').hidden, { timeout: 5000 });
+    t = await state(page);
+    ok('switch: the settings show Light picked', t.checked === 'light', JSON.stringify(t));
+    await still(page, 'pane-switch-settings-light.png');
+    await click(page, '[data-theme-set="office"]');
+    t = await state(page);
+    ok("switch: Office in the settings follows Office's dark on its own colour", t.theme === 'dark' && t.bg === 'rgb(38, 38, 38)' && t.stored === 'office' && t.checked === 'office', JSON.stringify(t));
+    const settings = await page.evaluate(lowContrast);
+    ok("switch: every text in the settings passes AA on Office's dark", !settings.length, settings.join(', '));
+    await still(page, 'pane-switch-settings-dark.png');
+    await click(page, '[data-theme-set="dark"]');
+    t = await state(page);
+    ok("switch: Dark in a dark Office theme keeps Office's colour", t.theme === 'dark' && t.bg === 'rgb(38, 38, 38)' && t.stored === 'dark' && t.checked === 'dark', JSON.stringify(t));
+    await page.evaluate(() => localStorage.removeItem('p3n.theme'));
     await page.close();
   },
 
