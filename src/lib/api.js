@@ -11,7 +11,7 @@ export const LINKS = {
 // The API's input limits: without a key, and with one (https://p3n.si/docs).
 export const MAX_CHARS = { free: 5_000, key: 200_000 };
 // The add-in's version, as in package.json and manifest.xml (the e2e checks they agree).
-export const VERSION = '1.2.0';
+export const VERSION = '1.2.1';
 
 // Every call names this client (X-P3N-Client), for the user's usage page: p3n-word or p3n-excel and the version.
 // Set once Office says which app the pane is in; until then (or outside Office) calls go without it.

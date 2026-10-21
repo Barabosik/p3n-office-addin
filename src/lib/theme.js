@@ -1,6 +1,6 @@
 /* global Office */
-// The pane follows Office's theme (File > Account > Office Theme), not the system's, unless the user picks Light or
-// Dark: the header button, or Office, Light and Dark in the settings, saved on this device like the key. Dark Gray
+// The pane follows Office's theme (File > Account > Office Theme), not the system's, until the user clicks the header's
+// sun/moon button, which keeps the other theme on this device, like the key. Dark Gray
 // and Black get the dark palette (ui/base.css) on Office's own pane colour, so the pane matches the ribbon around it:
 // the boxes sit a step lighter, the notes take a tint of their colour, and any text tone that would miss WCAG AA
 // (4.5:1) on what it sits on is lightened until it passes. Dark picked in a light Office theme is p3n's own dark.
@@ -28,8 +28,9 @@ const root = document.documentElement;
 const media = matchMedia('(prefers-color-scheme: dark)');
 let office = null; // Office's theme, once it shares it
 
-// Office, Light or Dark. Storage can be missing or throw (lib/store.js); the pane then follows Office.
-const choice = () => { try { const c = localStorage.getItem(KEY); return c === 'light' || c === 'dark' ? c : 'office'; } catch { return 'office'; } };
+// Light or Dark once the button was clicked, else null: Office's. Storage can be missing or throw (lib/store.js); the
+// pane then follows Office.
+const kept = () => { try { const t = localStorage.getItem(KEY); return t === 'light' || t === 'dark' ? t : null; } catch { return null; } };
 
 // What Office shows (or the system, without Office's theme): dark or not, and the pane colour.
 function followed() {
@@ -39,14 +40,13 @@ function followed() {
 }
 
 function apply() {
-  const picked = choice();
+  const theme = kept();
   const base = followed();
-  const dark = picked === 'dark' || (picked === 'office' && base.dark);
+  const dark = theme ? theme === 'dark' : base.dark;
   root.dataset.themeFrom = office ? 'office' : 'system';
   root.dataset.theme = dark ? 'dark' : 'light';
   const flip = dark ? 'Switch to light theme' : 'Switch to dark theme';
   document.querySelectorAll('[data-theme-toggle]').forEach((b) => { b.setAttribute('aria-label', flip); b.title = flip; });
-  document.querySelectorAll('[data-theme-set]').forEach((b) => b.setAttribute('aria-checked', b.dataset.themeSet === picked));
   for (const [p] of TEXT) root.style.removeProperty(p);
   for (const p of GROUNDS) root.style.removeProperty(p);
   if (!dark || !base.dark || !base.ground) return;
@@ -79,26 +79,16 @@ function repaint() {
   setTimeout(() => still.remove(), 1);
 }
 
-function pick(c) {
-  try { c === 'office' ? localStorage.removeItem(KEY) : localStorage.setItem(KEY, c); } catch {}
-  repaint();
-}
-
-// At boot, before Office is ready: the header button and the settings' choice, and the system's setting live until
-// Office's theme is known.
+// At boot, before Office is ready: the header button, and the system's setting live until Office's theme is known.
 export function themeSwitch() {
   apply();
   media.addEventListener('change', () => { if (!office) repaint(); });
   // Another p3n pane on this device (Word and Excel open side by side) picked one.
   window.addEventListener('storage', (e) => { if (e.key === KEY || e.key === null) repaint(); });
   document.addEventListener('click', (e) => {
-    // The header button: the other of light and dark, which is Office's again when it matches Office.
-    if (e.target.closest('[data-theme-toggle]')) {
-      const want = root.dataset.theme === 'dark' ? 'light' : 'dark';
-      return pick(want === (followed().dark ? 'dark' : 'light') ? 'office' : want);
-    }
-    const b = e.target.closest('[data-theme-set]');
-    if (b) pick(b.dataset.themeSet);
+    if (!e.target.closest('[data-theme-toggle]')) return;
+    try { localStorage.setItem(KEY, root.dataset.theme === 'dark' ? 'light' : 'dark'); } catch {}
+    repaint();
   });
 }
 
