@@ -39,7 +39,8 @@ async function call(path, { method = 'GET', body, key, signal } = {}) {
   if (!res.ok) {
     const err = data?.error ?? {};
     throw new ApiError(res.status, err.type ?? TYPE_BY_STATUS[res.status] ?? 'error', err.message ?? data?.message ?? `p3n answered ${res.status}.`, {
-      signupUrl: err.signup_url,
+      // Only p3n's own sign-up page goes into the Sign up button.
+      signupUrl: String(err.signup_url ?? '').startsWith(`${SITE}/`) ? err.signup_url : null,
       retryAfter: Number(err.retry_after_seconds ?? res.headers.get('Retry-After')) || null,
       free: free === null ? null : Number(free),
     });
@@ -60,6 +61,10 @@ export async function runSkill(skill, text, { key, options, signal } = {}) {
   for (let i = 0; (status === 202 || run?.status === 'queued' || run?.status === 'running') && i < 150; i++) {
     await sleep(2000, signal);
     ({ data: run, status } = await call(`/v1/runs/${run.id}`, { key, signal }));
+  }
+  // Still going after the 5 minutes of polling: it may yet finish (and be charged), so don't call it failed.
+  if (run?.status === 'queued' || run?.status === 'running') {
+    throw new ApiError(504, 'too_long', 'p3n is still working on this text after 5 minutes. Try again with less text.');
   }
   if (run?.status === 'failed' || !run?.output) {
     throw new ApiError(502, 'run_failed', run?.error || 'The run failed. You were not charged. Try again.');

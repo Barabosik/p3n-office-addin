@@ -29,7 +29,7 @@ const P7 = 'In summary, the numbers speak for themselves.';
 const BOOK = { [SHEET]: { A1: 'Notes', B1: 'Hours', A2: P1, B2: 12, A3: P2, B3: 30, A4: P3, B4: { v: 'Owner: Maja', f: '="Owner: "&"Maja"' }, A7: P7 } };
 
 // ---- canned API answers ------------------------------------------------------------------------
-const mock = { calls: [], auth: [], pages: [], humanizeBlocks: null, humanizeScores: null, status: null, long: false };
+const mock = { calls: [], auth: [], pages: [], humanizeBlocks: null, humanizeScores: null, detectOutput: null, status: null, long: false };
 // P7's rewrite starts with a minus sign, which Excel would read as the start of a formula.
 const REWRITES = { [P1]: 'Good tools help a team talk. Which ones? That depends on the team.', [P3]: 'It works for teams of any size.', 'seamless transition': 'move', [P7]: '-30% hours, as planned.' };
 const rewriteOf = (p) => REWRITES[p] ?? p.split(' ').slice(0, 8).join(' ') + '.';
@@ -45,7 +45,7 @@ function answer(url, body) {
   if (url.endsWith('/v1/detect')) {
     const a = { status: 200, headers: free, body: { id: 'mock-detect', skill: 'detect', status: 'succeeded', cached: false, error: null, charged_usd: '0',
       output: { version: 'detect-v1.2', ai: 0.91, label: 'ai', verdict: 'Generic claims with no fact behind them.', confidence: { level: 'medium', reason: 'Short text.' },
-        sentences: [{ text: text.split(/(?<=\.)\s/)[0], why: 'A stock opening with a vague claim.' }], examples: [] } } };
+        sentences: [{ text: text.split(/(?<=\.)\s/)[0], why: 'A stock opening with a vague claim.' }], examples: [], ...mock.detectOutput } } };
     // A long result, so a short pane has room to scroll past the score.
     if (mock.long) a.body.output.sentences = text.split(/(?<=\.)\s/).map((t) => ({ text: t, why: 'Generic, with no fact behind it. '.repeat(4) }));
     return a;
@@ -245,6 +245,27 @@ const SCENARIOS = {
     const msg = await note(page);
     ok('changed: Replace refuses when the text changed', /changed in the document/.test(msg), msg);
     ok('changed: the document is left as the user edited it', JSON.stringify(await docParas(page)) === JSON.stringify(before));
+    await page.close();
+  },
+
+  // An answer missing the fields the pane shows: an error the user can act on, not a script error or a 0% score.
+  async malformed() {
+    if (LIVE) return;
+    const page = await openPane({ name: 'malformed' });
+    await boot(page);
+    const type = (t) => page.evaluate((v) => { const x = document.querySelector('#text'); x.value = v; x.dispatchEvent(new Event('input')); }, t);
+    mock.detectOutput = { ai: undefined };
+    await type(`${P1} Malformed check.`);
+    await run(page, '#check');
+    const d = await page.$eval('#result', (r) => ({ text: r.innerText, error: !!r.querySelector('.note.error') }));
+    ok('malformed: a check with no score says so instead of showing 0%', d.error && !/likely AI/.test(d.text), d.text.slice(0, 120));
+    mock.detectOutput = null;
+    mock.humanizeScores = { text: undefined };
+    await type(`${P1} Malformed rewrite.`);
+    await run(page, '#rewrite');
+    const h = await page.$eval('#result', (r) => ({ text: r.innerText, error: !!r.querySelector('.note.error') }));
+    ok('malformed: a rewrite with no text says so, with no script error', h.error && !/Cannot read|undefined/.test(h.text), h.text.slice(0, 120));
+    mock.humanizeScores = null;
     await page.close();
   },
 

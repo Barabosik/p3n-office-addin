@@ -276,7 +276,7 @@ async function start(skill, text, options) {
     // The progress bar goes before the result scrolls into view; gone after, it would pull the score up
     // out of sight.
     setBusy(null);
-    render(run, text);
+    render(run, text, skill);
   } catch (e) {
     setBusy(null);
     if (e.name !== 'AbortError') showError(e);
@@ -305,8 +305,13 @@ function setBusy(skill) {
 
 // ---- results -----------------------------------------------------------------------------
 
-function render(run, text) {
-  const body = run.skill === 'detect' ? renderDetect(run.output) : run.skill === 'humanize' ? renderHumanize(run.output, text) : [h('div', { class: 'rewrite' }, run.output?.text ?? '')];
+function render(run, text, skill) {
+  const o = run.output;
+  // An answer without what the pane shows is a failed run to the user, not a 0% score or a script error.
+  if ((skill === 'detect' && typeof o?.ai !== 'number') || (skill === 'humanize' && typeof o?.text !== 'string')) {
+    return showError(new ApiError(502, 'bad_output', 'p3n sent an answer this version of the add-in can\'t read. Try again in a moment.'));
+  }
+  const body = skill === 'detect' ? renderDetect(o) : skill === 'humanize' ? renderHumanize(o, text) : [h('div', { class: 'rewrite' }, o?.text ?? '')];
   const meta = h('p', { class: 'small muted' }, `${run.output?.version ?? run.skill}${run.cached ? ' · from cache' : ''}${state.key && run.charged_usd ? ` · $${Number(run.charged_usd).toFixed(4)}` : ''}`);
   const box = stagger(h('div', { class: 'result-in stack' }, body, meta));
   els.result.replaceChildren(box);
