@@ -36,13 +36,15 @@ p3n sends the text you chose, only when you click, and only to `api.p3n.si`. It 
 
 ## Install
 
-Until the AppSource listing is live, add it from its manifest, [manifest.xml](https://barabosik.github.io/p3n-office-addin/manifest.xml):
+Until the AppSource listing is live, add it from its manifest, [manifest.xml](https://nikita-andreiev.com/p3n-office-addin/manifest.xml):
 
 - **Word or Excel on the web:** Home › Add-ins › More Add-ins › My Add-ins › Upload My Add-in, then pick the file.
 - **Windows:** put the file in a shared folder, add that folder as a trusted catalog, then find p3n under Shared Folder. [Microsoft's steps](https://learn.microsoft.com/office/dev/add-ins/testing/create-a-network-shared-folder-catalog-for-task-pane-and-content-add-ins).
 - **Mac:** copy the file to `~/Library/Containers/com.microsoft.Word/Data/Documents/wef` (for Excel, `com.microsoft.Excel`), then restart the app.
 
 The pane loads from GitHub Pages, so it updates by itself.
+
+**Added it before 21 October 2026?** Add the manifest again. The pane moved from `barabosik.github.io` to `nikita-andreiev.com`, and the old manifest doesn't load it any more. On the web, remove p3n under My Add-ins first. On Windows and Mac, put the new file where the old one was and restart Word or Excel.
 
 ## Known gaps
 

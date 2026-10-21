@@ -50,5 +50,5 @@ No account is needed. In Word: select a paragraph, then Home > Check for AI, and
 
 Calls without an API key are free, 10 an hour per IP, up to 5,000 characters each. If the testers share an IP and hit that limit, the pane says so and when more calls come.
 
-The add-in contacts only https://api.p3n.si, and only when the user clicks Check for AI or Rewrite. The pane's files are served from https://barabosik.github.io/p3n-office-addin/. Source: https://github.com/Barabosik/p3n-office-addin.
+The add-in contacts only https://api.p3n.si, and only when the user clicks Check for AI or Rewrite. The pane's files are served from https://nikita-andreiev.com/p3n-office-addin/. Source: https://github.com/Barabosik/p3n-office-addin.
 ```

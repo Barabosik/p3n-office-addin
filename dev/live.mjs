@@ -231,7 +231,7 @@ try {
     // Excel can stay behind with no workbook after Quit. Only the instance this run started is stopped:
     // the run refuses to start while the app is open.
     spawnSync('powershell', ['-NoProfile', '-Command', `$t=[datetime]::Parse('${started.toISOString()}').ToLocalTime(); for ($i=0; $i -lt 20 -and (Get-Process ${app.exe} -ErrorAction SilentlyContinue | Where-Object StartTime -gt $t); $i++) { Start-Sleep -Milliseconds 500 }; Get-Process ${app.exe} -ErrorAction SilentlyContinue | Where-Object StartTime -gt $t | Stop-Process -Force`], { encoding: 'utf8', timeout: 30000 });
-    await exited(npx(['office-addin-debugging', 'stop', 'manifest.dev.xml']));
+    await exited(npx(['office-addin-debugging', 'stop', MANIFEST]));
     await exited(npx(['office-addin-dev-settings', 'runtime-log', '--disable'])); // start turns it on; stop leaves it
   }
 }

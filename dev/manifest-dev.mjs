@@ -6,7 +6,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-export const PUBLISHED = 'https://barabosik.github.io/p3n-office-addin/';
+export const PUBLISHED = 'https://nikita-andreiev.com/p3n-office-addin/';
 export const LOCAL = 'https://localhost:3000/';
 
 export function devManifest(xml) {

@@ -6,7 +6,7 @@ The p3n add-in for Word and Excel sends text to p3n only when you ask it to.
 - **Where it goes.** Only to `api.p3n.si`, over HTTPS.
 - **What it doesn't do.** While the pane is open it looks at your selection to count its words for the Use selection button. That count stays in the pane. It keeps no history, and has no analytics or ads.
 - **What stays on your device.** Your API key, in the add-in's own storage. It's never written into a document or workbook, so it doesn't travel with a file you share. Remove key in the pane deletes it.
-- **Where the pane comes from.** Office loads the pane's files from GitHub Pages (`barabosik.github.io`) and Office.js from Microsoft (`appsforoffice.microsoft.com`), like any web page. Those requests carry no document text.
+- **Where the pane comes from.** Office loads the pane's files from GitHub Pages, at `nikita-andreiev.com`, and Office.js from Microsoft (`appsforoffice.microsoft.com`), like any web page. Those requests carry no document text.
 
 What p3n does with the text it receives:
 - It keeps the text for up to 7 days, to return results and debug failures, then deletes it.

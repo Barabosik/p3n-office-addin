@@ -1,4 +1,4 @@
-# Publishes the task pane (src/) and manifest.xml to https://barabosik.github.io/p3n-office-addin/.
+# Publishes the task pane (src/) and manifest.xml to https://nikita-andreiev.com/p3n-office-addin/.
 # Office loads the pane from there each time it opens, so a deploy reaches everyone who has the add-in.
 # It deploys only after the mocked end-to-end checks pass.
 name: Pages
