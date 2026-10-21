@@ -20,14 +20,7 @@
       <img class="dark-only" src="assets/logo-dark.png" width="22" height="22" alt="">
       <span class="wordmark">p<span>3</span>n</span>
     </a>
-    <div class="bar-end">
-      <button type="button" id="account" class="link small" aria-controls="settings">Add API key</button>
-      <!-- Light or dark: shows what a click does, the moon on a light pane, the sun on a dark one (lib/theme.js). -->
-      <button type="button" class="icon-btn" data-theme-toggle aria-label="Switch to dark theme" title="Switch to dark theme">
-        <svg class="light-only" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.25 12.1A6.5 6.5 0 0 1 7.9 3.75a6.5 6.5 0 1 0 8.35 8.35z"/></svg>
-        <svg class="dark-only" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="3.25"/><path d="M10 2.5v1.5M10 16v1.5M2.5 10H4M16 10h1.5M4.7 4.7l1.05 1.05M14.25 14.25l1.05 1.05M4.7 15.3l1.05-1.05M14.25 5.75l1.05-1.05"/></svg>
-      </button>
-    </div>
+    <button type="button" id="account" class="link small" aria-controls="settings">Add API key</button>
   </header>
 
   <main id="main">
@@ -70,12 +63,28 @@
     </div>
     <p id="key-status" class="note small" hidden></p>
 
+    <h2 class="sub">Appearance</h2>
+    <p class="small muted">Office follows Office's theme (File &gt; Account &gt; Office Theme). The same three are at the foot of the pane.</p>
+    <div class="choice" role="radiogroup" aria-label="Theme">
+      <button type="button" role="radio" aria-checked="false" data-theme-set="office"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="10" rx="1.5"/><path d="M7 16.75h6M10 13.75v3"/></svg>Office</button>
+      <button type="button" role="radio" aria-checked="false" data-theme-set="light"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="3.25"/><path d="M10 2.5v1.5M10 16v1.5M2.5 10H4M16 10h1.5M4.7 4.7l1.05 1.05M14.25 14.25l1.05 1.05M4.7 15.3l1.05-1.05M14.25 5.75l1.05-1.05"/></svg>Light</button>
+      <button type="button" role="radio" aria-checked="false" data-theme-set="dark"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.25 12.1A6.5 6.5 0 0 1 7.9 3.75a6.5 6.5 0 1 0 8.35 8.35z"/></svg>Dark</button>
+    </div>
+
     <h2 class="sub">What p3n sends</h2>
     <p class="small">Only the text you choose, and only when you click Check or Rewrite. It goes to <code>api.p3n.si</code> and nowhere else. The pane looks at your selection only to count its words, keeps no history and has no analytics.</p>
     <p class="small">Your key and your light or dark choice stay on this device, in the add-in's own storage. They're never saved inside a document or workbook, so they don't travel with a file you share.</p>
   </section>
 
-  <footer id="quota" class="small muted"></footer>
+  <!-- Office, Light or Dark, as in p3n.si's footer (lib/theme.js); also in the settings. -->
+  <footer id="foot" class="foot">
+    <span id="quota" class="small muted"></span>
+    <div class="pill" role="radiogroup" aria-label="Theme">
+      <button type="button" role="radio" aria-checked="false" data-theme-set="office" aria-label="Office" title="Office"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.75" y="3.75" width="14.5" height="10" rx="1.5"/><path d="M7 16.75h6M10 13.75v3"/></svg></button>
+      <button type="button" role="radio" aria-checked="false" data-theme-set="light" aria-label="Light" title="Light"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="3.25"/><path d="M10 2.5v1.5M10 16v1.5M2.5 10H4M16 10h1.5M4.7 4.7l1.05 1.05M14.25 14.25l1.05 1.05M4.7 15.3l1.05-1.05M14.25 5.75l1.05-1.05"/></svg></button>
+      <button type="button" role="radio" aria-checked="false" data-theme-set="dark" aria-label="Dark" title="Dark"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.25 12.1A6.5 6.5 0 0 1 7.9 3.75a6.5 6.5 0 1 0 8.35 8.35z"/></svg></button>
+    </div>
+  </footer>
 
   <script type="module" src="taskpane.js"></script>
 </body>

@@ -5,6 +5,7 @@
   --ink-hover: #000;
   --muted: #6b645a;
   --tint: #f5f1ea;
+  --raised: #fff; /* a chosen option inside a tinted box */
   --rule: #e6e1d8;
   --accent: #c2410c;
   --accent-hover: #9a3412;
@@ -32,7 +33,7 @@
   color-scheme: light;
 }
 
-/* Dark: Office's Dark Gray or Black theme (outside Office the system's), or Dark kept with the header button (data-theme:
+/* Dark: Office's Dark Gray or Black theme (outside Office the system's), or Dark picked at the foot or in the settings (data-theme:
    ui/theme.js, lib/theme.js).
    p3n.si's dark palette: same hues, a warm dark ground, lighter text tones; fills keep the brand red-brown with
    white text. In Office the ground becomes Office's own pane colour (lib/theme.js), so the pane matches the ribbon. */
@@ -43,6 +44,7 @@
   --muted: #a39b8f;
   --tint: #24201a;
   --rule: #332e27;
+  --raised: var(--rule); /* Office's pane colour moves it with the rest (lib/theme.js) */
   --accent-hover: #c84a1e;
   --accent-ink: #e09774;
   --accent-text: #e09774;
@@ -109,15 +111,26 @@ p { margin: 0; }
   color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px;
   transition: color var(--t-hover) ease;
 }
-/* An icon button: the header's light/dark switch. */
-.icon-btn {
-  display: inline-flex; align-items: center; justify-content: center; flex: none;
-  width: 32px; height: 32px; border: 0; border-radius: var(--radius); padding: 0;
-  background: none; color: var(--muted); cursor: pointer;
+/* Office, Light or Dark as three icons, as in p3n.si's footer (the pane's foot). */
+.pill { display: inline-flex; flex: none; gap: 2px; padding: 2px; border: 1px solid var(--rule); border-radius: 999px; }
+.pill button {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px;
+  background: none; color: var(--muted); cursor: pointer; transition: background-color var(--t-hover) ease, color var(--t-hover) ease;
+}
+.pill svg { width: 14px; height: 14px; }
+.pill button[aria-checked="true"] { background: var(--tint); color: var(--ink); }
+@media (hover: hover) { .pill button:hover { color: var(--ink); } }
+
+/* Office, Light or Dark, one chosen (the settings). */
+.choice { display: inline-flex; align-self: flex-start; gap: 4px; padding: 4px; border-radius: 10px; background: var(--tint); }
+.choice button {
+  display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 6px; padding: 6px 11px;
+  background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer;
   transition: background-color var(--t-hover) ease, color var(--t-hover) ease;
 }
-.icon-btn svg { width: 18px; height: 18px; }
-@media (hover: hover) { .icon-btn:hover { background: var(--tint); color: var(--ink); } }
+.choice svg { width: 15px; height: 15px; flex: none; }
+.choice button[aria-checked="true"] { background: var(--raised); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+@media (hover: hover) { .choice button:hover { color: var(--ink); } }
 
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

@@ -1,4 +1,4 @@
-// Light or dark before the pane paints: the theme the header button kept (lib/theme.js), else the system's
+// Light or dark before the pane paints: Light or Dark if the user picked one (lib/theme.js), else the system's
 // setting until Office's own theme is known. lib/theme.js takes over once the pane's script runs.
 (() => {
   const root = document.documentElement;

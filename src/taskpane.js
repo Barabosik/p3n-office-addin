@@ -8,7 +8,7 @@ import { followOfficeTheme, themeSwitch } from './lib/theme.js';
 const $ = (s) => document.querySelector(s);
 const els = {
   text: $('#text'), count: $('#count'), check: $('#check'), rewrite: $('#rewrite'), grab: $('#grab'), hint: $('#hint'),
-  busy: $('#busy'), busyText: $('#busy-text'), cancel: $('#cancel'), result: $('#result'), quota: $('#quota'), account: $('#account'),
+  busy: $('#busy'), busyText: $('#busy-text'), cancel: $('#cancel'), result: $('#result'), foot: $('#foot'), quota: $('#quota'), account: $('#account'),
   main: $('#main'), settings: $('#settings'), back: $('#back'), key: $('#key'), keyStatus: $('#key-status'), remove: $('#remove'),
 };
 // host: the Word or Excel glue and words below, once Office says where the pane runs.
@@ -495,7 +495,7 @@ function swap(toSettings) {
   const apply = () => {
     els.main.hidden = toSettings;
     els.settings.hidden = !toSettings;
-    els.quota.hidden = toSettings;
+    els.foot.hidden = toSettings;
     els.account.hidden = toSettings;
     document.body.dataset.view = toSettings ? 'settings' : 'main';
   };

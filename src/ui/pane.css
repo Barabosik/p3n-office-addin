@@ -4,8 +4,7 @@ main, .settings { flex: 1; padding: 0 14px 16px; display: flex; flex-direction: 
 .stack { display: flex; flex-direction: column; gap: 14px; }
 .stack.tight { gap: 8px; }
 
-header.bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 8px 8px 14px; }
-.bar-end { display: flex; align-items: center; gap: 6px; }
+header.bar { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 10px; }
 .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); text-decoration: none; }
 .wordmark { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
 .wordmark span { color: var(--accent-text); }
@@ -85,8 +84,7 @@ h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
 .settings { gap: 10px; padding-top: 4px; }
 .settings code { font-size: 12.5px; background: var(--tint); padding: 1px 4px; border-radius: 4px; }
 
-footer#quota { padding: 10px 14px 14px; }
-footer#quota:empty { display: none; }
+footer.foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px 14px; }
 
 /* index.html, the front page of the pane's host. */
 .site main { flex: 0; width: 100%; max-width: 36rem; margin: 0 auto; padding: 56px 20px; }

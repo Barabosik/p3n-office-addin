@@ -683,56 +683,63 @@ const SCENARIOS = {
     await page.close();
   },
 
-  // The sun/moon button: the pane follows Office until a click keeps the other theme, a second click keeps the first,
-  // a kept theme shows from the first paint when the pane opens again, and the settings have no theme control.
+  // Office, Light or Dark (house rule: as in p3n.si's footer, nothing in the header): three icons at the pane's foot
+  // and Appearance in the settings. Office by default; a pick holds from the first paint when the pane opens again;
+  // Dark in a dark Office theme keeps Office's own colour.
   async switch() {
     if (LIVE) return;
     const state = (page) => page.evaluate(() => ({ theme: document.documentElement.dataset.theme, bg: getComputedStyle(document.body).backgroundColor,
-      kept: localStorage.getItem('p3n.theme'), label: document.querySelector('header [data-theme-toggle]')?.getAttribute('aria-label') }));
-    const toggle = (page) => click(page, 'header [data-theme-toggle]');
+      stored: localStorage.getItem('p3n.theme') ?? 'office', foot: document.querySelector('footer [data-theme-set][aria-checked="true"]')?.dataset.themeSet,
+      settings: document.querySelector('#settings [data-theme-set][aria-checked="true"]')?.dataset.themeSet }));
     const still = async (page, file) => { await new Promise((r) => setTimeout(r, 300)); await page.screenshot({ path: path.join(OUT, file) }); };
 
     // A light Office theme.
     let page = await openPane({ name: 'switch', height: 560 });
     await boot(page, [P1]);
     let t = await state(page);
-    ok('switch: the sun/moon button is in the header, following Office', t.label === 'Switch to dark theme' && t.kept === null && t.theme === 'light', JSON.stringify(t));
+    const where = await page.evaluate(() => ({ header: !document.querySelector('header [data-theme-set], header [data-theme-toggle], header [role="radiogroup"]'),
+      buttons: document.querySelectorAll('footer [role="radiogroup"] [data-theme-set]').length, inView: (() => { const r = document.querySelector('footer [role="radiogroup"]')?.getBoundingClientRect(); return !!r && r.width > 0 && r.right <= innerWidth; })() }));
+    ok('switch: Office, Light and Dark at the foot, nothing in the header, Office by default', where.header && where.buttons === 3 && where.inView && t.stored === 'office' && t.foot === 'office' && t.theme === 'light', JSON.stringify({ ...where, ...t }));
     await still(page, 'pane-switch-light.png');
-    await toggle(page);
+    await click(page, 'footer [data-theme-set="dark"]');
     t = await state(page);
-    ok("switch: a click turns a light Office theme's pane dark (p3n's dark) and keeps it", t.theme === 'dark' && t.bg === 'rgb(22, 19, 15)' && t.kept === 'dark' && t.label === 'Switch to light theme', JSON.stringify(t));
+    ok("switch: Dark at the foot turns a light Office theme's pane dark (p3n's dark) and keeps it", t.theme === 'dark' && t.bg === 'rgb(22, 19, 15)' && t.stored === 'dark' && t.foot === 'dark' && t.settings === 'dark', JSON.stringify(t));
     const dark = await page.evaluate(lowContrast);
-    ok('switch: every text passes AA in the kept dark', !dark.length, dark.join(', '));
+    ok('switch: every text passes AA in the picked dark', !dark.length, dark.join(', '));
     await still(page, 'pane-switch-dark.png');
-    await toggle(page);
+    await click(page, 'footer [data-theme-set="office"]');
     t = await state(page);
-    ok('switch: a second click keeps light', t.theme === 'light' && t.kept === 'light', JSON.stringify(t));
+    ok("switch: Office at the foot is Office's theme again", t.theme === 'light' && t.stored === 'office' && t.foot === 'office', JSON.stringify(t));
     await page.close();
 
-    // Dark kept, the pane opened again: dark from the first paint.
+    // Dark picked, the pane opened again: dark from the first paint.
     page = await openPane({ name: 'switch', pick: 'dark' });
     await boot(page, [P1]);
     t = await state(page);
-    ok('switch: a kept theme shows when the pane opens again, from the first paint', await page.evaluate(() => window.__firstTheme) === 'dark' && t.theme === 'dark', JSON.stringify(t));
+    ok('switch: a pick holds when the pane opens again, from the first paint', await page.evaluate(() => window.__firstTheme) === 'dark' && t.theme === 'dark' && t.foot === 'dark', JSON.stringify(t));
     await page.close();
 
-    // A dark Office theme: light kept, then dark on Office's own colour; no theme control in the settings.
+    // A dark Office theme, in the settings: Light, then Office (dark on Office's own colour), then Dark (the same colour).
     page = await openPane({ name: 'switch', height: 760, theme: officeDark('#262626') });
     await boot(page, [P1]);
     t = await state(page);
-    ok("switch: a dark Office theme's pane starts on Office's colour", t.theme === 'dark' && t.bg === 'rgb(38, 38, 38)' && t.kept === null, JSON.stringify(t));
-    await toggle(page);
-    t = await state(page);
-    ok("switch: a click turns a dark Office theme's pane light", t.theme === 'light' && t.bg === 'rgb(251, 250, 247)' && t.kept === 'light', JSON.stringify(t));
-    await toggle(page);
-    t = await state(page);
-    ok("switch: a second click is dark on Office's own colour", t.theme === 'dark' && t.bg === 'rgb(38, 38, 38)' && t.kept === 'dark', JSON.stringify(t));
+    ok("switch: a dark Office theme's pane starts on Office's colour", t.theme === 'dark' && t.bg === 'rgb(38, 38, 38)' && t.stored === 'office', JSON.stringify(t));
     await click(page, '#account');
     await page.waitForFunction(() => !document.querySelector('#settings').hidden, { timeout: 5000 });
-    ok('switch: the settings have no theme control', await page.evaluate(() => !document.querySelector('[data-theme-set], [role="radiogroup"]') && !/Appearance/.test(document.querySelector('#settings').innerText)));
+    ok('switch: the settings have Appearance, the foot hides', await page.evaluate(() => /Appearance/.test(document.querySelector('#settings').innerText) && document.querySelector('footer').hidden));
+    await click(page, '#settings [data-theme-set="light"]');
+    t = await state(page);
+    ok("switch: Light in the settings turns a dark Office theme's pane light", t.theme === 'light' && t.bg === 'rgb(251, 250, 247)' && t.stored === 'light' && t.settings === 'light', JSON.stringify(t));
+    await still(page, 'pane-switch-settings-light.png');
+    await click(page, '#settings [data-theme-set="office"]');
+    t = await state(page);
+    ok("switch: Office in the settings follows Office's dark on its own colour", t.theme === 'dark' && t.bg === 'rgb(38, 38, 38)' && t.stored === 'office' && t.settings === 'office', JSON.stringify(t));
     const settings = await page.evaluate(lowContrast);
     ok("switch: every text in the settings passes AA on Office's dark", !settings.length, settings.join(', '));
     await still(page, 'pane-switch-settings-dark.png');
+    await click(page, '#settings [data-theme-set="dark"]');
+    t = await state(page);
+    ok("switch: Dark in a dark Office theme keeps Office's colour", t.theme === 'dark' && t.bg === 'rgb(38, 38, 38)' && t.stored === 'dark' && t.settings === 'dark', JSON.stringify(t));
     await page.evaluate(() => localStorage.removeItem('p3n.theme'));
     await page.close();
   },
