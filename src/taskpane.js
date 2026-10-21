@@ -381,7 +381,7 @@ function renderHumanize(o, sent) {
   const buttons = [];
   if (replaceable) {
     const rep = h('button', { type: 'button', class: 'btn accent' }, state.host.replace(state.source.where));
-    rep.addEventListener('click', () => replaceInDocument(rewrite, rep, status));
+    rep.addEventListener('click', () => replaceInDocument(rewrite, sent, rep, status));
     buttons.push(rep);
   }
   buttons.push(copyBtn, h('button', { type: 'button', class: 'link small push', onclick: () => start('humanize', sent, { fresh: true }) }, 'Try another rewrite'));
@@ -415,10 +415,12 @@ function renderHumanize(o, sent) {
   return parts;
 }
 
-async function replaceInDocument(text, button, status) {
+async function replaceInDocument(text, sent, button, status) {
   const s = state.source;
   const host = state.host;
   const say = (msg, kind) => { status.textContent = msg; status.className = `note small ${kind}`; status.hidden = false; };
+  // Use selection took in other text since this rewrite: its ref points there, not at the text rewritten.
+  if (s?.sent.trim() !== sent) return say('You took other text from the document since this rewrite. Rewrite that text, or copy this one.', 'warn');
   button.disabled = true;
   const r = s?.ref ? await host.glue.replace(s.ref, text) : { ok: false, reason: 'gone' };
   if (r.ok) {

@@ -248,6 +248,20 @@ const SCENARIOS = {
     await page.close();
   },
 
+  // A rewrite still on screen after other text was taken in: its Replace refuses, and the new text stays.
+  async stale() {
+    const page = await openPane({ name: 'stale' });
+    await boot(page, [P1]);
+    await run(page, '#rewrite');
+    await page.evaluate((p) => window.__doc.select(p), P2);
+    await grab(page);
+    await replaceNow(page);
+    const msg = await note(page);
+    ok('stale: Replace refuses after other text was taken in', /other text/.test(msg), msg);
+    ok('stale: the document is left alone', JSON.stringify(await docParas(page)) === JSON.stringify([TITLE, P1, P2, P3]), JSON.stringify(await docParas(page)));
+    await page.close();
+  },
+
   // Edits elsewhere move the text: the tracked range follows it, and Replace still hits the right words.
   async moved() {
     const page = await openPane({ name: 'moved' });
