@@ -78,7 +78,7 @@ await mkdir(OUT, { recursive: true });
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, pipe: true, args: ['--lang=en-US', ...(process.env.CI ? ['--no-sandbox'] : [])] });
 const errors = [];
 
-async function openPane({ name, width = 320, height = 900, calm = false, key = null, host = 'Word' }) {
+async function openPane({ name, width = 320, height = 900, calm = false, key = null, host = 'Word', scheme = 'light', theme = null }) {
   const page = await browser.newPage();
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
   page.on('console', (m) => {
@@ -86,7 +86,8 @@ async function openPane({ name, width = 320, height = 900, calm = false, key = n
     if (m.type() === 'error' && !(name === 'settings' && /401/.test(m.text())) && !(name === 'limits' && /429/.test(m.text()))) errors.push(`${name}: ${m.text()}`);
   });
   await page.setViewport({ width, height });
-  if (calm) await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+  // The system's light or dark is set either way, so the captures don't follow the machine's own.
+  await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: scheme }, ...(calm ? [{ name: 'prefers-reduced-motion', value: 'reduce' }] : [])]);
   await page.setRequestInterception(true);
   page.on('request', (r) => {
     const url = r.url();
@@ -106,13 +107,14 @@ async function openPane({ name, width = 320, height = 900, calm = false, key = n
     return r.abort();
   });
   // The document or workbook and the user's selection exist before the pane opens.
-  await page.evaluateOnNewDocument((app, d, k) => {
+  await page.evaluateOnNewDocument((app, d, k, t) => {
     window.__host = app;
     window.__setup = d;
+    if (t) window.__theme = t;
     // Pages share the test origin's storage: each starts with the key it asks for, or none.
     if (k) localStorage.setItem('p3n.apiKey', k);
     else localStorage.removeItem('p3n.apiKey');
-  }, host, host === 'Excel' ? BOOK : DOC, key);
+  }, host, host === 'Excel' ? BOOK : DOC, key, theme);
   return page;
 }
 
@@ -128,6 +130,30 @@ const scoreSettled = () => {
   const sr = document.querySelector('.score .sr');
   return !!n && n.textContent === sr.textContent && !document.querySelector('.meter i')?.style.transform;
 };
+// Office's dark themes as the pane gets them. Microsoft doesn't publish the pane colours, and the pane takes whatever
+// Office reports, so these are a dark ground and a lighter one where the palette's muted tone would miss AA unadjusted.
+const officeDark = (ground) => ({ themeId: 'Black', isDarkTheme: true, bodyBackgroundColor: ground, bodyForegroundColor: '#ffffff', controlBackgroundColor: ground, controlForegroundColor: '#ffffff' });
+// Every visible text in the pane against the background it's drawn on: WCAG AA (3:1 for large text). After the
+// colour transitions a theme change starts.
+const lowContrast = async () => {
+  await Promise.all(document.getAnimations().filter((a) => a instanceof CSSTransition).map((a) => a.finished.catch(() => {})));
+  const parse = (s) => s.match(/[\d.]+/g).map(Number);
+  const lum = (c) => c.slice(0, 3).map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const bad = [];
+  for (const el of document.querySelectorAll('body *')) {
+    if (!el.checkVisibility() || el.matches(':disabled') || ![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
+    let bg = null;
+    for (let a = el; a && !bg; a = a.parentElement) { const c = parse(getComputedStyle(a).backgroundColor); if ((c[3] ?? 1) > 0) bg = c; }
+    const cs = getComputedStyle(el);
+    const [x, y] = [lum(parse(cs.color)), lum(bg)].sort((m, n) => n - m);
+    const size = parseFloat(cs.fontSize);
+    const need = size >= 24 || (size >= 18.66 && Number(cs.fontWeight) >= 700) ? 3 : 4.5;
+    if ((x + 0.05) / (y + 0.05) < need) bad.push(`${el.tagName.toLowerCase()}${el.className ? `.${el.className}` : ''} ${((x + 0.05) / (y + 0.05)).toFixed(2)}`);
+  }
+  return bad;
+};
+const paneTheme = (page) => page.evaluate(() => ({ theme: document.documentElement.dataset.theme, bg: getComputedStyle(document.body).backgroundColor,
+  logo: [...document.querySelectorAll('.brand img')].find((i) => i.checkVisibility())?.getAttribute('src') }));
 const click = (page, sel) => page.evaluate((s) => document.querySelector(s).click(), sel);
 const clickText = (page, text) => page.evaluate((t) => [...document.querySelectorAll('button, a')].find((b) => b.textContent.startsWith(t)).click(), text);
 const hasButton = (page, text) => page.evaluate((t) => [...document.querySelectorAll('#result button')].some((b) => b.textContent.startsWith(t)), text);
@@ -608,6 +634,45 @@ const SCENARIOS = {
     ok('manifests: the version matches package.json', xml.includes(`<Version>${pkg.version}.0</Version>`), pkg.version);
   },
 
+  // The pane follows Office's theme, not the system's: a dark Office theme gets the dark palette on Office's own pane
+  // colour with every text passing AA, a light one stays light on a dark system, and a change is picked up when the
+  // pane comes back into view.
+  async theme() {
+    if (LIVE) return;
+    for (const [ground, rgb] of [['#262626', 'rgb(38, 38, 38)'], ['#4a4a4a', 'rgb(74, 74, 74)']]) {
+      const page = await openPane({ name: 'theme', theme: officeDark(ground) });
+      await boot(page, [P1]);
+      let t = await paneTheme(page);
+      ok(`theme: a dark Office theme on ${ground} darkens the pane on Office's colour`, t.theme === 'dark' && t.bg === rgb && t.logo === 'assets/logo-dark.png', JSON.stringify(t));
+      const before = await page.evaluate(lowContrast);
+      ok(`theme: on ${ground}, every text passes AA before a run`, !before.length, before.join(', '));
+      await run(page, '#check');
+      await new Promise((r) => setTimeout(r, 1300));
+      const checked = await page.evaluate(lowContrast);
+      ok(`theme: on ${ground}, every text in a Check result passes AA`, !checked.length, checked.join(', '));
+      await page.screenshot({ path: path.join(OUT, `pane-dark-${ground.slice(1)}-check.png`), fullPage: true });
+      await grab(page);
+      await run(page, '#rewrite');
+      await replaceNow(page);
+      await new Promise((r) => setTimeout(r, 500));
+      const replaced = await page.evaluate(lowContrast);
+      ok(`theme: on ${ground}, every text in a replaced rewrite passes AA`, !replaced.length, replaced.join(', '));
+      await page.screenshot({ path: path.join(OUT, `pane-dark-${ground.slice(1)}-replaced.png`), fullPage: true });
+      if (ground === '#262626') {
+        // Back to Colorful while the pane was out of view.
+        await page.evaluate(() => { window.__theme = null; window.dispatchEvent(new Event('focus')); });
+        t = await paneTheme(page);
+        ok('theme: a change to a light Office theme is picked up when the pane is back in view', t.theme === 'light' && t.bg === 'rgb(251, 250, 247)' && t.logo === 'assets/logo.png', JSON.stringify(t));
+      }
+      await page.close();
+    }
+    const page = await openPane({ name: 'theme', scheme: 'dark' });
+    await boot(page, [P1]);
+    const t = await paneTheme(page);
+    ok('theme: a light Office theme keeps the pane light on a dark system', t.theme === 'light' && t.bg === 'rgb(251, 250, 247)', JSON.stringify(t));
+    await page.close();
+  },
+
   // Outside Office (the pane opened in a plain browser): paste still works, no selection link.
   async browser() {
     if (LIVE) return;
@@ -618,6 +683,17 @@ const SCENARIOS = {
     await page.goto(`${base}/taskpane.html`);
     await page.waitForFunction(() => !document.querySelector('#hint').hidden, { timeout: 5000 }).catch(() => {});
     ok('browser: without Office.js the pane explains and still takes pasted text', await page.evaluate(() => document.querySelector('#grab').hidden && /Open p3n from Word/.test(document.querySelector('#hint').textContent)));
+    // Without Office's theme the system's light or dark decides, live.
+    const scheme = async (value) => {
+      await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value }]);
+      await page.waitForFunction((v) => document.documentElement.dataset.theme === v, { timeout: 2000, polling: 50 }, value).catch(() => {});
+      return paneTheme(page);
+    };
+    const light = await scheme('light');
+    const dark = await scheme('dark');
+    ok("browser: without Office the system's light or dark decides", light.theme === 'light' && dark.theme === 'dark' && dark.bg === 'rgb(22, 19, 15)' && dark.logo === 'assets/logo-dark.png', JSON.stringify([light, dark]));
+    const bad = await page.evaluate(lowContrast);
+    ok('browser: every text passes AA in the dark palette', !bad.length, bad.join(', '));
     await page.close();
   },
 };

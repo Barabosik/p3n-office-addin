@@ -19,7 +19,7 @@ npm install
 npm run e2e
 ```
 
-This loads the pane in headless Chrome with a stand-in for Office.js (`dev/office-stub.js`) that models a Word document and an Excel workbook, and answers API calls with canned results. It covers Check, Rewrite and Replace, the cases where Replace refuses, the limits, the API key and the manifests.
+This loads the pane in headless Chrome with a stand-in for Office.js (`dev/office-stub.js`) that models a Word document and an Excel workbook, and answers API calls with canned results. It covers Check, Rewrite and Replace, the cases where Replace refuses, the limits, the API key, the manifests, and the pane's light and dark (`theme`: Office's dark themes on its own pane colour, with every text checked for WCAG AA contrast).
 
 - `LIVE=1 npm run e2e` uses the live API without a key: one Check and one Rewrite, 2 of the 10 free calls an hour.
 - `ONLY=replace,excelReplace` runs some of the scenarios. `CHROME=` points at another Chrome.

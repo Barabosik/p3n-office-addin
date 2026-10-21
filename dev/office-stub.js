@@ -320,13 +320,23 @@
     },
   };
 
+  // Office's theme: Colorful unless the test sets window.__theme (read live, so a test can change it).
+  const COLORFUL = { themeId: 'Colorful', isDarkTheme: false, bodyBackgroundColor: '#ffffff', bodyForegroundColor: '#000000', controlBackgroundColor: '#ffffff', controlForegroundColor: '#000000' };
   globalThis.Office = {
     HostType: { Word: 'Word', Excel: 'Excel' },
-    EventType: { DocumentSelectionChanged: 'documentSelectionChanged' },
+    EventType: { DocumentSelectionChanged: 'documentSelectionChanged', OfficeThemeChanged: 'officeThemeChanged' },
     onReady: async () => ({ host: HOST, platform: 'PC' }),
     context: {
       requirements: { isSetSupported: (name) => name === (HOST === 'Excel' ? 'ExcelApi' : 'WordApi') },
-      document: { addHandlerAsync: (type, handler, cb) => { handlers.push(handler); cb?.({ status: 'succeeded' }); } },
+      get officeTheme() { return globalThis.__theme ?? COLORFUL; },
+      document: {
+        // Word and Excel raise only the selection event here; OfficeThemeChanged is Outlook's.
+        addHandlerAsync: (type, handler, cb) => {
+          if (type !== 'documentSelectionChanged') return cb?.({ status: 'failed', error: { code: 5001, message: 'Unsupported event' } });
+          handlers.push(handler);
+          cb?.({ status: 'succeeded' });
+        },
+      },
       ui: {},
     },
   };

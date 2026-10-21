@@ -1,17 +1,26 @@
-/* p3n colours, the same tokens as p3n.si and the browser extension. */
+/* p3n colours, the same tokens as p3n.si and the browser extension. Dark ones below. */
 :root {
   --paper: #fbfaf7;
   --ink: #16130f;
+  --ink-hover: #000;
   --muted: #6b645a;
   --tint: #f5f1ea;
   --rule: #e6e1d8;
   --accent: #c2410c;
   --accent-hover: #9a3412;
   --accent-ink: #9a3412;
+  --accent-text: #c2410c; /* the brand colour as text (wordmark, score); dark takes a lighter tone */
   --amber: #b45309;
   --amber-bar: #f59e0b;
   --green: #047857;
   --green-bar: #059669;
+  --green-fill: #047857;
+  --warn-bg: #fef3c7;
+  --warn-ink: #78350f;
+  --error-bg: #fde8e1;
+  --error-ink: #7c2d12;
+  --ok-bg: #e7f5ee;
+  --ok-ink: #065f46;
   --radius: 8px;
   --highlight: #fcd9c4;
   /* Motion (taste-skill tokens): enter with ease-out, travel with ease-in-out, never bounce. */
@@ -22,6 +31,35 @@
   --t-ui: 240ms;
   color-scheme: light;
 }
+
+/* Dark: Office's Dark Gray or Black theme, or outside Office the system's (data-theme: ui/theme.js, lib/theme.js).
+   p3n.si's dark palette: same hues, a warm dark ground, lighter text tones; fills keep the brand red-brown with
+   white text. In Office the ground becomes Office's own pane colour (lib/theme.js), so the pane matches the ribbon. */
+:root[data-theme="dark"] {
+  --paper: #16130f;
+  --ink: #ece8e1;
+  --ink-hover: #fbfaf7;
+  --muted: #a39b8f;
+  --tint: #24201a;
+  --rule: #332e27;
+  --accent-hover: #c84a1e;
+  --accent-ink: #e09774;
+  --accent-text: #e09774;
+  --amber: #d9a03a;
+  --amber-bar: #d9a03a;
+  --green: #5fa36f;
+  --green-bar: #5fa36f;
+  --green-fill: #367245;
+  --warn-bg: #292116;
+  --warn-ink: #d9a03a;
+  --error-bg: #2b1d17;
+  --error-ink: #e7685d;
+  --ok-bg: #1f2219;
+  --ok-ink: #5fa36f;
+  --highlight: #532a16;
+  color-scheme: dark;
+}
+:root[data-theme="dark"] .light-only, :root:not([data-theme="dark"]) .dark-only { display: none; }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -54,14 +92,14 @@ p { margin: 0; }
 .btn.accent { background: var(--accent); color: #fff; }
 .btn.ink { background: var(--ink); color: var(--paper); }
 .btn.ghost { background: var(--tint); color: var(--ink); }
-.btn.ok, .btn.ok:disabled { background: var(--green); color: #fff; opacity: 1; cursor: default; }
+.btn.ok, .btn.ok:disabled { background: var(--green-fill); color: #fff; opacity: 1; cursor: default; }
 .btn .tick { width: 14px; height: 14px; flex: none; }
 .tick path { stroke-dasharray: 20; stroke-dashoffset: 20; animation: tick 320ms var(--ease-out) 60ms forwards; }
 @keyframes tick { to { stroke-dashoffset: 0; } }
 @media (prefers-reduced-motion: reduce) { .tick path { animation: none; stroke-dashoffset: 0; } }
 @media (hover: hover) {
   .btn.accent:not(:disabled):hover { background: var(--accent-hover); }
-  .btn.ink:not(:disabled):hover { background: #000; }
+  .btn.ink:not(:disabled):hover { background: var(--ink-hover); }
   .btn.ghost:not(:disabled):hover { background: var(--rule); }
   .link:hover { color: var(--accent-hover); }
 }
@@ -81,9 +119,9 @@ textarea { resize: vertical; min-height: 96px; line-height: 1.5; }
 textarea::placeholder, input::placeholder { color: var(--muted); }
 
 .note { border-radius: var(--radius); padding: 10px 12px; background: var(--tint); }
-.note.warn { background: #fef3c7; color: #78350f; }
-.note.error { background: #fde8e1; color: #7c2d12; }
-.note.ok { background: #e7f5ee; color: #065f46; }
+.note.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.note.error { background: var(--error-bg); color: var(--error-ink); }
+.note.ok { background: var(--ok-bg); color: var(--ok-ink); }
 
 /* The parts the browser draws carry the palette too. */
 ::selection { background: var(--highlight); color: var(--ink); }

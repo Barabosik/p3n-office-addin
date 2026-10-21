@@ -3,6 +3,7 @@ import { runSkill, me, ApiError, LINKS, MAX_CHARS } from './lib/api.js';
 import { apiKey, freeLeft } from './lib/store.js';
 import * as word from './lib/word.js';
 import * as excel from './lib/excel.js';
+import { followOfficeTheme } from './lib/theme.js';
 
 const $ = (s) => document.querySelector(s);
 const els = {
@@ -569,6 +570,7 @@ els.remove.addEventListener('click', () => {
   refreshAccount();
   // Office.js comes from Microsoft's CDN; without it (offline, or the page opened in a browser) the box still works.
   const info = globalThis.Office ? await Office.onReady() : null;
+  if (info) followOfficeTheme();
   const host = HOSTS[info?.host];
   if (!host || !Office.context.requirements?.isSetSupported(...host.api)) {
     hint(host ? host.hints.old : 'Open p3n from Word or Excel to use your selection. You can paste text here meanwhile.');

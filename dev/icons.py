@@ -5,7 +5,8 @@
 # ribbons. Everything Office draws (the ribbon button at 16, 32 and 80 px, and the add-in list icon at 32 and
 # 64 px, the same icon at two DPIs) shows only the pen: the swooshes below it turn to noise that small. The
 # 128 px icon and the 300 px AppSource logo show the whole logo. logo.png is the plain logo for the pane's
-# header, which sits on p3n's light paper anyway.
+# header on light paper; logo-dark.png, from dev/logo-512-dark.png (p3n.si's dark logo: the black line art in the
+# dark theme's ink), is the same on the dark pane.
 import sys
 from pathlib import Path
 from PIL import Image, ImageDraw
@@ -41,6 +42,8 @@ out_dir.mkdir(parents=True, exist_ok=True)
 for size, art, pad in ((16, pen, 0.08), (32, pen, 0.1), (64, pen, 0.1), (80, pen, 0.12), (128, logo, 0.12)):
     tile(art, size, pad).save(out_dir / f"icon-{size}.png", optimize=True)
 logo.resize((128, 128), Image.LANCZOS).save(out_dir / "logo.png", optimize=True)
+dark = Image.open(ROOT / "dev" / "logo-512-dark.png").convert("RGBA")
+square(dark).resize((128, 128), Image.LANCZOS).save(out_dir / "logo-dark.png", optimize=True)
 # AppSource wants a logo between 216 and 350 px square.
 store_dir = ROOT / ("dev/out/icons" if "preview" in sys.argv else "store")
 tile(logo, 300, 0.12).save(store_dir / "logo-300.png", optimize=True)
