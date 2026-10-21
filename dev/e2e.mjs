@@ -16,6 +16,7 @@ const OUT = path.join(import.meta.dirname, 'out');
 const CHROME = process.env.CHROME || { win32: 'C:/Program Files/Google/Chrome/Application/chrome.exe', darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' }[process.platform] || '/usr/bin/google-chrome';
 const LIVE = !!process.env.LIVE;
 const STUB = await readFile(path.join(import.meta.dirname, 'office-stub.js'), 'utf8');
+const PKG = JSON.parse(await readFile(path.join(ROOT, '..', 'package.json'), 'utf8'));
 
 const TITLE = 'Quarterly update';
 const P1 = "In today's fast-paced world, it's worth noting that effective communication is more important than ever. Moreover, leveraging the right tools can help teams unlock their full potential.";
@@ -29,7 +30,7 @@ const P7 = 'In summary, the numbers speak for themselves.';
 const BOOK = { [SHEET]: { A1: 'Notes', B1: 'Hours', A2: P1, B2: 12, A3: P2, B3: 30, A4: P3, B4: { v: 'Owner: Maja', f: '="Owner: "&"Maja"' }, A7: P7 } };
 
 // ---- canned API answers ------------------------------------------------------------------------
-const mock = { calls: [], auth: [], pages: [], humanizeBlocks: null, humanizeScores: null, detectOutput: null, status: null, long: false };
+const mock = { calls: [], auth: [], pages: [], clients: [], humanizeBlocks: null, humanizeScores: null, detectOutput: null, status: null, long: false };
 // P7's rewrite starts with a minus sign, which Excel would read as the start of a formula.
 const REWRITES = { [P1]: 'Good tools help a team talk. Which ones? That depends on the team.', [P3]: 'It works for teams of any size.', 'seamless transition': 'move', [P7]: '-30% hours, as planned.' };
 const rewriteOf = (p) => REWRITES[p] ?? p.split(' ').slice(0, 8).join(' ') + '.';
@@ -93,12 +94,13 @@ async function openPane({ name, width = 320, height = 900, calm = false, key = n
     const url = r.url();
     if (url === 'https://appsforoffice.microsoft.com/lib/1/hosted/office.js') return r.respond({ status: 200, contentType: 'text/javascript', body: STUB });
     if (url.startsWith('https://api.p3n.si/') && !LIVE) {
-      if (r.method() === 'OPTIONS') return r.respond({ status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept', 'Access-Control-Allow-Methods': 'GET, POST' } });
+      if (r.method() === 'OPTIONS') return r.respond({ status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, X-P3N-Client', 'Access-Control-Allow-Methods': 'GET, POST' } });
       const body = r.postData() ? JSON.parse(r.postData()) : {};
       body.auth = r.headers().authorization;
       mock.calls.push(new URL(url).pathname);
       mock.auth.push(body.auth ?? null);
       mock.pages.push(name);
+      mock.clients.push(r.headers()['x-p3n-client'] ?? null);
       const a = answer(url, body);
       return r.respond({ status: a.status, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Expose-Headers': 'X-Free-Remaining', ...(a.headers ?? {}) }, body: JSON.stringify(a.body) });
     }
@@ -154,6 +156,8 @@ const lowContrast = async () => {
 };
 const paneTheme = (page) => page.evaluate(() => ({ theme: document.documentElement.dataset.theme, bg: getComputedStyle(document.body).backgroundColor,
   logo: [...document.querySelectorAll('.brand img')].find((i) => i.checkVisibility())?.getAttribute('src') }));
+// The X-P3N-Client header of each canned call one pane made.
+const clientsOf = (name) => mock.clients.filter((_, i) => mock.pages[i] === name);
 const click = (page, sel) => page.evaluate((s) => document.querySelector(s).click(), sel);
 const clickText = (page, text) => page.evaluate((t) => [...document.querySelectorAll('button, a')].find((b) => b.textContent.startsWith(t)).click(), text);
 const hasButton = (page, text) => page.evaluate((t) => [...document.querySelectorAll('#result button')].some((b) => b.textContent.startsWith(t)), text);
@@ -194,6 +198,7 @@ const SCENARIOS = {
     await run(page, '#check');
     const res = await page.evaluate(() => ({ text: document.querySelector('#result').innerText, error: !!document.querySelector('#result .note.error'), quota: document.querySelector('#quota').textContent }));
     ok('check: the result shows', !res.error && /likely AI/.test(res.text), res.error ? res.text.slice(0, 160) : `${((Date.now() - t0) / 1000).toFixed(1)} s, ${res.quota}`);
+    if (!LIVE) ok('check: the call names the client (X-P3N-Client)', clientsOf('check').join() === `p3n-word/${PKG.version}`, clientsOf('check').join(', '));
     if (process.env.FRAMES) for (const [i, ms] of [0, 150, 300, 500, 800].entries()) { await new Promise((r) => setTimeout(r, ms ? 150 : 0)); await page.screenshot({ path: path.join(OUT, `frame-check-${i}.png`) }); }
     await new Promise((r) => setTimeout(r, 1300));
     ok('check: the score ends on the stated value', await page.evaluate(scoreSettled));
@@ -499,6 +504,7 @@ const SCENARIOS = {
     ok('excel: the box suggests selecting cells', /Select cells/.test(await page.$eval('#text', (t) => t.placeholder)));
     await run(page, '#check');
     ok('excel: Check shows a result', /likely AI/.test(await page.$eval('#result', (r) => r.innerText)));
+    ok('excel: the call names the client (X-P3N-Client)', clientsOf('excelCheck').join() === `p3n-excel/${PKG.version}`, clientsOf('excelCheck').join(', '));
     await run(page, '#rewrite');
     const kept = await page.$eval('#result', (r) => r.innerText);
     ok('excel: a rewrite of several cells has Copy but no Replace, and says why', !(await hasButton(page, 'Replace')) && (await hasButton(page, 'Copy')) && /single cell/.test(kept), kept.split('\n').slice(-3).join(' '));

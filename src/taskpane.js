@@ -1,5 +1,5 @@
 /* global Office */
-import { runSkill, me, ApiError, LINKS, MAX_CHARS } from './lib/api.js';
+import { runSkill, me, setClient, ApiError, LINKS, MAX_CHARS } from './lib/api.js';
 import { apiKey, freeLeft } from './lib/store.js';
 import * as word from './lib/word.js';
 import * as excel from './lib/excel.js';
@@ -572,6 +572,7 @@ els.remove.addEventListener('click', () => {
   const info = globalThis.Office ? await Office.onReady() : null;
   if (info) followOfficeTheme();
   const host = HOSTS[info?.host];
+  if (host) setClient(info.host);
   if (!host || !Office.context.requirements?.isSetSupported(...host.api)) {
     hint(host ? host.hints.old : 'Open p3n from Word or Excel to use your selection. You can paste text here meanwhile.');
     return;

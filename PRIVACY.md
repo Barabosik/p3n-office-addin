@@ -2,7 +2,7 @@
 
 The p3n add-in for Word and Excel sends text to p3n only when you ask it to.
 
-- **What it sends.** The text you selected, or typed into the pane, when you click Check for AI or Rewrite. If you added an API key, the key goes with it so p3n can bill your account, and the pane uses it to show your balance.
+- **What it sends.** The text you selected, or typed into the pane, when you click Check for AI or Rewrite. If you added an API key, the key goes with it so p3n can bill your account, and the pane uses it to show your balance. Each call also names the add-in and its version (for example `p3n-word/1.1.0`), so your usage page can show which tool made it.
 - **Where it goes.** Only to `api.p3n.si`, over HTTPS.
 - **What it doesn't do.** While the pane is open it looks at your selection to count its words for the Use selection button. That count stays in the pane. It keeps no history, and has no analytics or ads.
 - **What stays on your device.** Your API key, in the add-in's own storage. It's never written into a document or workbook, so it doesn't travel with a file you share. Remove key in the pane deletes it.

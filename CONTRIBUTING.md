@@ -40,7 +40,7 @@ Once, first: `npx office-addin-dev-certs install` makes a certificate for `local
 
 ## Release
 
-1. Raise the version in `package.json` and in `manifest.xml` (`<Version>` has four parts), then run `npm run manifest` and `npm run validate`.
+1. Raise the version in `package.json`, in `manifest.xml` (`<Version>` has four parts) and in `src/lib/api.js` (`VERSION`, sent in `X-P3N-Client`), then run `npm run manifest` and `npm run validate`.
 2. Push to `main`. CI runs the tests, and the Pages workflow deploys `src/` and `manifest.xml` to `https://barabosik.github.io/p3n-office-addin/` once they pass.
 
 Office loads the pane from Pages each time it opens, so a deploy reaches everyone. A change to the manifest reaches people only when they install it again or the store copy is updated. The add-in's Id can't change once it's on AppSource. The store copy is in `store/listing.md`, and the submission steps are in `store/partner-center-steps.md`. `python dev/icons.py` builds the icons.

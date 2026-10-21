@@ -10,6 +10,13 @@ export const LINKS = {
 };
 // The API's input limits: without a key, and with one (https://p3n.si/docs).
 export const MAX_CHARS = { free: 5_000, key: 200_000 };
+// The add-in's version, as in package.json and manifest.xml (the e2e checks they agree).
+export const VERSION = '1.1.0';
+
+// Every call names this client (X-P3N-Client), for the user's usage page: p3n-word or p3n-excel and the version.
+// Set once Office says which app the pane is in; until then (or outside Office) calls go without it.
+let client = null;
+export function setClient(host) { client = `p3n-${host.toLowerCase()}/${VERSION}`; }
 
 export class ApiError extends Error {
   constructor(status, type, message, extra = {}) {
@@ -26,6 +33,7 @@ async function call(path, { method = 'GET', body, key, signal } = {}) {
   const headers = { Accept: 'application/json' };
   if (body) headers['Content-Type'] = 'application/json';
   if (key) headers.Authorization = `Bearer ${key}`;
+  if (client) headers['X-P3N-Client'] = client;
   let res;
   try {
     res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal });
