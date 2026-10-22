@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  AppSource (not listed yet) · <a href="https://p3n.si">p3n.si</a>
+  <a href="#install">Install</a> · <a href="https://p3n.si">p3n.si</a> · <a href="https://nikita-andreiev.com/p3n/">All p3n apps</a>
 </p>
 
 <p align="center">
@@ -28,11 +28,11 @@
 
 ## Free, or with a key
 
-You get 10 checks or rewrites an hour without an account, up to 5,000 characters each. For more, make an API key at [p3n.si](https://p3n.si/dashboard/keys) and paste it into the pane (Add API key, top right).
+You get 10 checks or rewrites an hour without an account, up to 5,000 characters each. For more, [sign up at p3n.si](https://p3n.si/register) (you get free credit), make a key on the [API keys](https://p3n.si/dashboard/keys) page, and add it with **Add API key** at the top of the pane.
 
 ## Privacy
 
-p3n sends the text you chose, only when you click, and only to `api.p3n.si`. It keeps no history and has no analytics. Your API key stays on your device and is never saved in a document. The details are in [PRIVACY.md](PRIVACY.md).
+The add-in sends the text you chose to `api.p3n.si`, and only when you click. The add-in keeps no history and has no analytics. Your API key stays on your device and is never saved in a document. p3n.si keeps the text for up to 7 days. The details are in [PRIVACY.md](PRIVACY.md).
 
 ## Install
 
@@ -49,6 +49,10 @@ The pane loads from GitHub Pages, so it updates by itself.
 ## Known gaps
 
 Tested in Word and Excel for Windows (Microsoft 365). Mac and the web run the same code but haven't been tested. In Excel, Replace works on one cell at a time, and never over a formula.
+
+## Other p3n apps
+
+p3n also works in [Chrome and Firefox](https://nikita-andreiev.com/p3n/#browser), [Google Docs](https://nikita-andreiev.com/p3n/#docs), [VS Code](https://nikita-andreiev.com/p3n/#vscode), [Obsidian](https://nikita-andreiev.com/p3n/#obsidian) and [Sublime Text](https://nikita-andreiev.com/p3n/#sublime). Install steps for each are on [nikita-andreiev.com/p3n](https://nikita-andreiev.com/p3n/).
 
 ## Develop
 
