@@ -22,7 +22,7 @@
 
 - **Check for AI.** A score, a one-line reason, and the sentences that give it away.
 - **Rewrite.** A version that keeps your facts and drops the filler. **Replace** puts it back where it came from. In Word that's your selection, and each paragraph keeps its style. In Excel it's the cell. Ctrl+Z undoes it.
-- Open it from **Check for AI** on the Home tab, or **Check with p3n** in the right-click menu.
+- Open it from **Check for AI** on the Home tab, or **Check with p3n** in the right-click menu. It checks what you selected.
 
 ![Rewrite and Replace in Excel](store/screenshot-excel-replace.png)
 

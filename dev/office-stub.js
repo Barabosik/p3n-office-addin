@@ -330,6 +330,8 @@
       requirements: { isSetSupported: (name) => name === (HOST === 'Excel' ? 'ExcelApi' : 'WordApi') },
       get officeTheme() { return globalThis.__theme ?? COLORFUL; },
       document: {
+        // The add-in's settings stored in the document; window.__autoshow tags it to open the pane with it.
+        settings: { get: (name) => (name === 'Office.AutoShowTaskpaneWithDocument' ? globalThis.__autoshow ?? null : null) },
         // Word and Excel raise only the selection event here; OfficeThemeChanged is Outlook's.
         addHandlerAsync: (type, handler, cb) => {
           if (type !== 'documentSelectionChanged') return cb?.({ status: 'failed', error: { code: 5001, message: 'Unsupported event' } });

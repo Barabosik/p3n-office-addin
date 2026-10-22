@@ -1,5 +1,5 @@
 /* global Office */
-import { runSkill, me, setClient, ApiError, LINKS, MAX_CHARS } from './lib/api.js';
+import { runSkill, me, setClient, ApiError, LINKS, MAX_CHARS, MIN_DETECT_CHARS, MIN_REWRITE_WORDS, rewriteWords } from './lib/api.js';
 import { apiKey, freeLeft } from './lib/store.js';
 import * as word from './lib/word.js';
 import * as excel from './lib/excel.js';
@@ -17,10 +17,13 @@ const els = {
 const state = { key: apiKey.get(), host: null, source: null, controller: null, timer: null, free: freeLeft.get(), selected: null };
 
 // What differs between Word and Excel: the glue, the API version it needs, and the words for where text lives.
+// The box's placeholder names the selection link as it reads with something selected or nothing.
 const HOSTS = {
   Word: {
     glue: word, api: ['WordApi', '1.3'],
-    placeholder: 'Select text in your document and click Use selection. Or paste it here.',
+    placeholder: (selected) => (selected
+      ? 'Select text in your document and click Use selection. Or paste it here.'
+      : 'Select text in your document, or click Use whole document. Or paste text here.'),
     nothing: 'Use whole document',
     hints: {
       none: 'Nothing is selected. Select text in the document first.',
@@ -42,7 +45,7 @@ const HOSTS = {
   },
   Excel: {
     glue: excel, api: ['ExcelApi', '1.4'],
-    placeholder: 'Select cells and click Use selection. Or paste text here.',
+    placeholder: () => 'Select cells and click Use selection. Or paste text here.',
     nothing: 'Use selection',
     hints: {
       none: 'The selected cells have no text. Select cells with text first.',
@@ -191,10 +194,12 @@ function refreshInput() {
 }
 
 // The selection link says what it will take: the selection and its size, or (in Word) the whole document.
+// The empty box says the same.
 function refreshGrab() {
   els.grab.hidden = !state.host;
   const w = state.selected?.words ?? 0;
   els.grab.textContent = w ? `Use selection (${w.toLocaleString()} ${w === 1 ? 'word' : 'words'})` : state.host?.nothing ?? '';
+  if (state.host) els.text.placeholder = state.host.placeholder(w > 0);
 }
 
 function hint(msg) {
@@ -266,6 +271,13 @@ async function start(skill, text, options) {
     return showError(new ApiError(422, 'too_long', state.key
       ? `That's ${text.length.toLocaleString()} characters; the API takes up to ${MAX_CHARS.key.toLocaleString()}. Select less.`
       : `That's ${text.length.toLocaleString()} characters. Without an API key p3n takes up to ${MAX_CHARS.free.toLocaleString()}. Select less, or add a key.`));
+  }
+  // The API refuses less than this; say so here rather than show its 422.
+  if (skill === 'detect' && [...text].length < MIN_DETECT_CHARS) {
+    return showError(new ApiError(422, 'too_short', `Check needs at least ${MIN_DETECT_CHARS} characters, a sentence or two. Select more.`));
+  }
+  if (skill === 'humanize' && rewriteWords(text) < MIN_REWRITE_WORDS) {
+    return showError(new ApiError(422, 'too_short', 'Rewrite needs at least a sentence of eight words. Select more.'));
   }
   const controller = new AbortController();
   state.controller = controller;
@@ -417,7 +429,7 @@ function renderHumanize(o, sent) {
   if (o.invented_blocked?.length) {
     parts.push(h('p', { class: 'small muted' }, `Kept as sent where a rewrite added ${o.invented_blocked.join(', ')}, which the text does not have.`));
   }
-  parts.push(h('p', { class: 'small muted' }, 'Humanize drops filler and general statements that carry no fact. Check that every claim you need is still there.'));
+  parts.push(h('p', { class: 'small muted' }, 'The rewrite drops filler and general statements that carry no fact. Check that every claim you need is still there.'));
   return parts;
 }
 
@@ -449,8 +461,8 @@ function showError(e) {
   switch (e.type) {
     case 'free_limit': {
       const mins = e.retryAfter ? Math.max(1, Math.ceil(e.retryAfter / 60)) : null;
-      kids.push(h('p', {}, `The free checks for this hour are used up${mins ? `; more in about ${mins} min` : ''}.`),
-        h('p', { class: 'small' }, 'Sign up for free credit and an API key, then paste the key here to keep going.'),
+      kids.push(h('p', {}, `The free calls for this hour are used up${mins ? `; more in about ${mins} min` : ''}.`),
+        h('p', { class: 'small' }, 'Sign up at p3n.si for free credit, then create an API key and add it here to keep going.'),
         h('div', { class: 'row' }, linkBtn('Sign up', e.signupUrl || LINKS.signup), keyBtn('Add an API key')));
       break;
     }
@@ -565,6 +577,16 @@ els.remove.addEventListener('click', () => {
 
 // ---- boot --------------------------------------------------------------------------------
 
+// Whether the user opened this pane. Check for AI on the Home tab and Check with p3n in the right-click menu
+// load it afresh, and Office tells the pane nothing else about what opened it. A reload of the same pane
+// doesn't count, nor does a document tagged to open p3n with it (Office.AutoShowTaskpaneWithDocument, which p3n
+// never sets). A pane that's only shown again isn't loaded again, so nothing runs then.
+function openedByUser() {
+  const nav = performance.getEntriesByType?.('navigation')[0]?.type;
+  if (nav && nav !== 'navigate') return false;
+  try { return !Office.context.document.settings.get('Office.AutoShowTaskpaneWithDocument'); } catch { return false; }
+}
+
 (async () => {
   themeSwitch();
   refreshInput();
@@ -575,13 +597,17 @@ els.remove.addEventListener('click', () => {
   const host = HOSTS[info?.host];
   if (host) setClient(info.host);
   if (!host || !Office.context.requirements?.isSetSupported(...host.api)) {
+    els.text.placeholder = 'Paste text here.';
     hint(host ? host.hints.old : 'Open p3n from Word or Excel to use your selection. You can paste text here meanwhile.');
     return;
   }
   state.host = host;
-  els.text.placeholder = host.placeholder;
   refreshGrab();
   await watchSelection();
-  // Opened with text selected (the ribbon button or the right-click menu): take it in, send nothing yet.
-  if (state.selected?.words && !els.text.value.trim()) await grab({ whole: false });
+  // Opened with text selected: take it in and, if the user opened the pane, check it as Check here would. Too
+  // short or too long, start() says so and sends nothing.
+  if (state.selected?.words && !els.text.value.trim()) {
+    const text = await grab({ whole: false });
+    if (text && openedByUser()) start('detect', text);
+  }
 })();

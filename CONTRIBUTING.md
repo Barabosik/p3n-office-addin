@@ -10,7 +10,7 @@ Plain JavaScript with no bundler. Office loads the task pane from `src/` as it i
 - `src/lib/excel.js`: reads the text in the selected cells, one paragraph per cell. Replace writes into the cell only when the text came from one cell that holds plain text, not a formula.
 - `src/lib/api.js`: the API client, the same file as in the browser extension.
 - `src/lib/store.js`: the API key, in the pane's `localStorage`.
-- `src/commands.html`: the function file the manifest needs. The buttons only open the pane.
+- `src/commands.html`: the function file the manifest needs. The buttons only open the pane, which checks the selection as it opens (not when it's reloaded, or opened with a document tagged to show it).
 
 ## Test
 
@@ -19,7 +19,7 @@ npm install
 npm run e2e
 ```
 
-This loads the pane in headless Chrome with a stand-in for Office.js (`dev/office-stub.js`) that models a Word document and an Excel workbook, and answers API calls with canned results. It covers Check, Rewrite and Replace, the cases where Replace refuses, the limits, the API key, the manifests, and the pane's light and dark (`theme`: Office's dark themes on its own pane colour, with every text checked for WCAG AA contrast; `switch`: Office, Light and Dark at the pane's foot and in the settings, no header button).
+This loads the pane in headless Chrome with a stand-in for Office.js (`dev/office-stub.js`) that models a Word document and an Excel workbook, and answers API calls with canned results. It covers Check, Rewrite and Replace, the check that runs when the pane opens on a selection (and when it doesn't), the cases where Replace refuses, the limits, the API key, the manifests, and the pane's light and dark (`theme`: Office's dark themes on its own pane colour, with every text checked for WCAG AA contrast; `switch`: Office, Light and Dark at the pane's foot and in the settings, no header button).
 
 - `LIVE=1 npm run e2e` uses the live API without a key: one Check and one Rewrite, 2 of the 10 free calls an hour.
 - `ONLY=replace,excelReplace` runs some of the scenarios. `CHROME=` points at another Chrome.

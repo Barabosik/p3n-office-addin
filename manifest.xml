@@ -8,7 +8,7 @@
            xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
            xsi:type="TaskPaneApp">
   <Id>ebcadc5f-371a-4c6d-b00c-8a6155a11338</Id>
-  <Version>1.2.2.0</Version>
+  <Version>1.2.3.0</Version>
   <ProviderName>Nikita Andreiev</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="p3n"/>

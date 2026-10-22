@@ -110,7 +110,7 @@ const TITLE = 'Quarterly update';
 const P1 = "In today's fast-paced world, it's worth noting that effective communication is more important than ever. Moreover, leveraging the right tools can help teams unlock their full potential and navigate the complexities of modern work.";
 const P2 = 'We moved the Ljubljana office to Tivolska 50 in March, and the new lease runs to 2029.';
 const P3 = 'Ultimately, this seamless transition unlocks a rich tapestry of possibilities for teams of all sizes, empowering everyone to thrive in an ever-evolving landscape.';
-const P7 = 'In summary, the numbers speak for themselves.';
+const P7 = 'In summary, the numbers clearly speak for themselves.';
 // In MOCK runs: each paragraph becomes "Rewritten paragraph N.", and P7's rewrite starts with a minus sign,
 // which Excel would read as a formula.
 const mockRewrite = (text) => (text === P7 ? '-30% hours, as planned.' : text.split(/\n\s*\n/).map((p, i) => `Rewritten paragraph ${i + 1}.`).join('\n\n'));
@@ -326,7 +326,7 @@ async function inWord(page, pane) {
 async function inExcel(page, pane) {
   // Notes in column A, hours in B, and a formula that makes text in B4.
   const CELLS = { A1: 'Notes', B1: 'Hours', A2: P1, B2: 12, A3: P2, B3: 30, A4: P3, A7: P7 };
-  const FORMULA = '="Owner: "&"Maja"';
+  const FORMULA = '="Owner: "&"Maja, who signs off the plan by Friday."';
   const write = () => ps(`[void]$s.Cells.Clear(); $s.Name = 'Q3 plan';
       ${Object.entries(CELLS).map(([a, v]) => `$s.Range('${a}').Value2 = ${typeof v === 'number' ? v : `'${q(v)}'`};`).join(' ')}
       $s.Range('B4').Formula = '${q(FORMULA)}'; $s.Range('A1:B1').Font.Bold = $true; $s.Columns('A').ColumnWidth = 60; $s.Range('A:A').WrapText = $true; 'true'`);
@@ -378,7 +378,7 @@ async function inExcel(page, pane) {
 
   // 4. A formula's text: checked and rewritten, never written over.
   select('B4');
-  ok('a formula cell\'s text comes in', (await pane.useSelection()) === 'Owner: Maja');
+  ok('a formula cell\'s text comes in', (await pane.useSelection()) === 'Owner: Maja, who signs off the plan by Friday.');
   await pane.run('#rewrite');
   ok('no Replace over a formula, and it says so', !(await pane.buttons()).some((b) => b.startsWith('Replace')) && /formula/.test(await pane.text()));
 

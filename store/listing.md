@@ -46,7 +46,7 @@ These are Partner Center's names for them. The order to fill them in is in [part
 ## Notes for certification
 
 ```
-No account is needed. In Word: select a paragraph, then Home > Check for AI, and click Check for AI or Rewrite in the pane. In Excel: select a cell with text and do the same. Replace writes the rewrite back into that cell.
+No account is needed. In Word: select a paragraph, then Home > Check for AI. The pane opens and checks it; Rewrite is in the pane. In Excel: select a cell with text and do the same. Replace writes the rewrite back into that cell.
 
 Calls without an API key are free, 10 an hour per IP, up to 5,000 characters each. If the testers share an IP and hit that limit, the pane says so and when more calls come.
 

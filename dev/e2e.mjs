@@ -26,13 +26,17 @@ const DOC = [{ text: TITLE, style: 'Heading 1' }, P1, P2, { text: P3, style: 'Li
 // The workbook: notes in column A, numbers in B, a formula that makes text in B4, on a sheet whose name
 // needs quoting in an address.
 const SHEET = 'Q3 plan';
-const P7 = 'In summary, the numbers speak for themselves.';
-const BOOK = { [SHEET]: { A1: 'Notes', B1: 'Hours', A2: P1, B2: 12, A3: P2, B3: 30, A4: P3, B4: { v: 'Owner: Maja', f: '="Owner: "&"Maja"' }, A7: P7 } };
+const P7 = 'In summary, the numbers clearly speak for themselves.';
+const OWNER = 'Owner: Maja, who signs off the plan by Friday.';
+const FORMULA = '="Owner: "&"Maja, who signs off the plan by Friday."';
+const BOOK = { [SHEET]: { A1: 'Notes', B1: 'Hours', A2: P1, B2: 12, A3: P2, B3: 30, A4: P3, B4: { v: OWNER, f: FORMULA }, A7: P7 } };
+// Part of P3, with the space after it, as a drag across words selects it.
+const PART = 'this seamless transition unlocks a rich tapestry of possibilities';
 
 // ---- canned API answers ------------------------------------------------------------------------
 const mock = { calls: [], auth: [], pages: [], clients: [], humanizeBlocks: null, humanizeScores: null, detectOutput: null, status: null, long: false };
 // P7's rewrite starts with a minus sign, which Excel would read as the start of a formula.
-const REWRITES = { [P1]: 'Good tools help a team talk. Which ones? That depends on the team.', [P3]: 'It works for teams of any size.', 'seamless transition': 'move', [P7]: '-30% hours, as planned.' };
+const REWRITES = { [P1]: 'Good tools help a team talk. Which ones? That depends on the team.', [P3]: 'It works for teams of any size.', [PART]: 'the move opens doors', [P7]: '-30% hours, as planned.' };
 const rewriteOf = (p) => REWRITES[p] ?? p.split(' ').slice(0, 8).join(' ') + '.';
 function answer(url, body) {
   const free = { 'X-Free-Remaining': '7' };
@@ -124,10 +128,13 @@ async function openPane({ name, width = 320, height = 900, calm = false, key = n
   return page;
 }
 
-async function boot(page, select) {
+// Opens the pane with `select` selected. Opened with text selected, as from Check for AI on the Home tab, the
+// pane checks it at once; `checked` waits for that result.
+async function boot(page, select, { checked = !!select } = {}) {
   if (select) await page.evaluateOnNewDocument((s) => { window.__select = s; }, select);
   await page.goto(`${base}/taskpane.html`);
   await page.waitForFunction(() => !document.querySelector('#grab').hidden, { timeout: 5000 });
+  if (checked) await page.waitForFunction(settled, { timeout: 120000, polling: 100 });
 }
 
 const settled = () => document.querySelector('#result')?.textContent.trim().length > 0 && document.querySelector('#busy').hidden;
@@ -160,8 +167,11 @@ const lowContrast = async () => {
 };
 const paneTheme = (page) => page.evaluate(() => ({ theme: document.documentElement.dataset.theme, bg: getComputedStyle(document.body).backgroundColor,
   logo: [...document.querySelectorAll('.brand img')].find((i) => i.checkVisibility())?.getAttribute('src') }));
-// The X-P3N-Client header of each canned call one pane made.
+// The X-P3N-Client header of each canned call one pane made, and the paths it called.
 const clientsOf = (name) => mock.clients.filter((_, i) => mock.pages[i] === name);
+const callsOf = (name) => mock.calls.filter((_, i) => mock.pages[i] === name);
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const type = (page, text) => page.evaluate((t) => { const x = document.querySelector('#text'); x.value = t; x.dispatchEvent(new Event('input')); }, text);
 const click = (page, sel) => page.evaluate((s) => document.querySelector(s).click(), sel);
 const clickText = (page, text) => page.evaluate((t) => [...document.querySelectorAll('button, a')].find((b) => b.textContent.startsWith(t)).click(), text);
 const hasButton = (page, text) => page.evaluate((t) => [...document.querySelectorAll('#result button')].some((b) => b.textContent.startsWith(t)), text);
@@ -187,22 +197,26 @@ async function replaceNow(page) {
 
 // ---- scenarios ---------------------------------------------------------------------------------
 const SCENARIOS = {
-  // Opened with a paragraph selected: the text comes in, nothing is sent until Check.
+  // Opened with a paragraph selected (Check for AI on the Home tab, or Check with p3n in the right-click menu):
+  // the text comes in and is checked at once, with one call.
   async check() {
     const page = await openPane({ name: 'check' });
-    const calls = mock.calls.length;
+    const t0 = Date.now();
     await boot(page, [P1]);
-    await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 }).catch(() => {});
     const box = await page.$eval('#text', (t) => t.value);
     ok('check: the selection is in the box when the pane opens', box === P1, JSON.stringify(box.slice(0, 40)));
-    ok('check: nothing is sent before a click', !mock.pages.slice(calls).includes('check'), mock.calls.slice(calls).join(','));
+    let res = await page.evaluate(() => ({ text: document.querySelector('#result').innerText, error: !!document.querySelector('#result .note.error'), quota: document.querySelector('#quota').textContent }));
+    ok('check: opening the pane checks the selection', !res.error && /likely AI/.test(res.text), res.error ? res.text.slice(0, 160) : `${((Date.now() - t0) / 1000).toFixed(1)} s, ${res.quota}`);
+    if (!LIVE) ok('check: with one call', callsOf('check').join() === '/v1/detect', callsOf('check').join(','));
     const grab = await page.$eval('#grab', (b) => b.textContent);
     ok('check: the link counts the selected words', /Use selection \(\d+ words\)/.test(grab), grab);
-    const t0 = Date.now();
-    await run(page, '#check');
-    const res = await page.evaluate(() => ({ text: document.querySelector('#result').innerText, error: !!document.querySelector('#result .note.error'), quota: document.querySelector('#quota').textContent }));
-    ok('check: the result shows', !res.error && /likely AI/.test(res.text), res.error ? res.text.slice(0, 160) : `${((Date.now() - t0) / 1000).toFixed(1)} s, ${res.quota}`);
-    if (!LIVE) ok('check: the call names the client (X-P3N-Client)', clientsOf('check').join() === `p3n-word/${PKG.version}`, clientsOf('check').join(', '));
+    // Check in the pane checks again (LIVE spends one call here, not two).
+    if (!LIVE) {
+      await run(page, '#check');
+      res = await page.evaluate(() => ({ text: document.querySelector('#result').innerText, error: !!document.querySelector('#result .note.error') }));
+      ok('check: Check in the pane checks it again', !res.error && /likely AI/.test(res.text) && callsOf('check').length === 2, callsOf('check').join(','));
+      ok('check: the calls name the client (X-P3N-Client)', clientsOf('check').every((c) => c === `p3n-word/${PKG.version}`), clientsOf('check').join(', '));
+    }
     if (process.env.FRAMES) for (const [i, ms] of [0, 150, 300, 500, 800].entries()) { await new Promise((r) => setTimeout(r, ms ? 150 : 0)); await page.screenshot({ path: path.join(OUT, `frame-check-${i}.png`) }); }
     await new Promise((r) => setTimeout(r, 1300));
     ok('check: the score ends on the stated value', await page.evaluate(scoreSettled));
@@ -211,9 +225,12 @@ const SCENARIOS = {
   },
 
   // Rewrite one paragraph and put it back: the rest of the document, the styles and the paragraph count stay.
+  // Selected with the pane open, so the only call is the Rewrite.
   async replace() {
     const page = await openPane({ name: 'replace' });
-    await boot(page, [P3]);
+    await boot(page);
+    await page.evaluate((p) => window.__doc.select(p), P3);
+    await page.waitForFunction(() => /Use selection \(\d+ words\)/.test(document.querySelector('#grab').textContent), { timeout: 5000 });
     await run(page, '#rewrite');
     const rewrite = await page.$eval('#result .rewrite', (r) => r.textContent).catch(() => null);
     ok('replace: the rewrite shows, without the trailing line break', !!rewrite && rewrite === rewrite.trim(), JSON.stringify(rewrite?.slice(-20)));
@@ -288,15 +305,14 @@ const SCENARIOS = {
     if (LIVE) return;
     const page = await openPane({ name: 'malformed' });
     await boot(page);
-    const type = (t) => page.evaluate((v) => { const x = document.querySelector('#text'); x.value = v; x.dispatchEvent(new Event('input')); }, t);
     mock.detectOutput = { ai: undefined };
-    await type(`${P1} Malformed check.`);
+    await type(page, `${P1} Malformed check.`);
     await run(page, '#check');
     const d = await page.$eval('#result', (r) => ({ text: r.innerText, error: !!r.querySelector('.note.error') }));
     ok('malformed: a check with no score says so instead of showing 0%', d.error && !/likely AI/.test(d.text), d.text.slice(0, 120));
     mock.detectOutput = null;
     mock.humanizeScores = { text: undefined };
-    await type(`${P1} Malformed rewrite.`);
+    await type(page, `${P1} Malformed rewrite.`);
     await run(page, '#rewrite');
     const h = await page.$eval('#result', (r) => ({ text: r.innerText, error: !!r.querySelector('.note.error') }));
     ok('malformed: a rewrite with no text says so, with no script error', h.error && !/Cannot read|undefined/.test(h.text), h.text.slice(0, 120));
@@ -366,14 +382,14 @@ const SCENARIOS = {
     await page.close();
   },
 
-  // Part of a sentence, with the space after it (a double-click selection): the space stays.
+  // Part of a sentence, with the space after it: the space stays.
   async partial() {
     const page = await openPane({ name: 'partial' });
-    await boot(page, ['seamless transition ']);
+    await boot(page, [`${PART} `]);
     await run(page, '#rewrite');
     await replaceNow(page);
     const p = (await docParas(page))[3];
-    ok('partial: only the selected words change, the space after them stays', p === P3.replace('seamless transition', 'move'), JSON.stringify(p));
+    ok('partial: only the selected words change, the space after them stays', p === P3.replace(PART, REWRITES[PART]), JSON.stringify(p));
     await page.close();
   },
 
@@ -387,6 +403,80 @@ const SCENARIOS = {
     const box = await page.$eval('#text', (t) => t.value);
     ok('whole: the whole document comes in', box === [TITLE, P1, P2, P3].join('\n\n'));
     ok('whole: says so', /whole document/.test(await page.$eval('#hint', (h) => h.textContent)));
+    await page.close();
+  },
+
+  // Opened with nothing selected: nothing is sent. The empty box names the link as it reads, with text selected
+  // and without, and selecting text or the pane coming back into view sends nothing.
+  async opened() {
+    const page = await openPane({ name: 'opened' });
+    await boot(page);
+    await pause(400);
+    const ui = () => page.evaluate(() => ({ link: document.querySelector('#grab').textContent, placeholder: document.querySelector('#text').placeholder,
+      box: document.querySelector('#text').value, result: document.querySelector('#result').textContent }));
+    let u = await ui();
+    ok('opened: with nothing selected nothing is sent, and the box stays empty', !callsOf('opened').length && !u.box && !u.result, callsOf('opened').join(','));
+    ok('opened: with nothing selected the box and the link both say Use whole document', u.link === 'Use whole document' && u.placeholder === 'Select text in your document, or click Use whole document. Or paste text here.', JSON.stringify(u));
+    await page.evaluate((p) => window.__doc.select(p), P1);
+    await page.waitForFunction(() => /Use selection \(\d+ words\)/.test(document.querySelector('#grab').textContent), { timeout: 5000 });
+    u = await ui();
+    ok('opened: with text selected the box and the link both say Use selection', /^Use selection \(/.test(u.link) && u.placeholder === 'Select text in your document and click Use selection. Or paste it here.', JSON.stringify(u));
+    await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
+    await pause(400);
+    ok('opened: selecting text, or the pane coming back into view, sends nothing', !callsOf('opened').length, callsOf('opened').join(','));
+    await page.evaluate(() => window.__doc.select(null));
+    await page.waitForFunction(() => document.querySelector('#grab').textContent === 'Use whole document', { timeout: 5000 });
+    ok('opened: nothing selected again, the box says Use whole document again', /Use whole document/.test(await page.$eval('#text', (t) => t.placeholder)));
+    await page.close();
+  },
+
+  // A pane Office loads without a click takes the selection in but sends nothing: the same pane reloaded, and a
+  // document tagged to open p3n with it (Office.AutoShowTaskpaneWithDocument).
+  async reopened() {
+    if (LIVE) return;
+    let page = await openPane({ name: 'reload' });
+    await boot(page, [P1]);
+    const first = callsOf('reload').join();
+    await page.reload();
+    await page.waitForFunction(() => document.querySelector('#text').value && /Use selection/.test(document.querySelector('#grab').textContent), { timeout: 5000 });
+    await pause(400);
+    const after = await page.evaluate(() => ({ box: document.querySelector('#text').value, result: document.querySelector('#result').textContent }));
+    ok('reopened: a reload of the pane takes the selection in and sends nothing', first === '/v1/detect' && callsOf('reload').join() === first && after.box === P1 && !after.result, `${callsOf('reload').join(',')} ${JSON.stringify(after.box.slice(0, 30))}`);
+    await page.close();
+
+    page = await openPane({ name: 'autoshow' });
+    await page.evaluateOnNewDocument(() => { window.__autoshow = true; });
+    await boot(page, [P1], { checked: false });
+    await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 });
+    await pause(400);
+    const box = await page.$eval('#text', (t) => t.value);
+    ok('reopened: a pane that opens with its document takes the selection in and sends nothing', box === P1 && !callsOf('autoshow').length, callsOf('autoshow').join(','));
+    await page.close();
+  },
+
+  // Too short for the API: the pane says so, as the extension does, and sends nothing. Opened on two words, the
+  // check is refused; Rewrite needs eight words, counted as the API counts them (numbers aren't words).
+  async short() {
+    if (LIVE) return;
+    const page = await openPane({ name: 'short' });
+    await boot(page, ['seamless transition']);
+    const say = () => page.$eval('#result', (r) => r.innerText.trim());
+    // Types `text` and clicks `button`, from an empty result so a message left from before doesn't count.
+    const attempt = async (button, text) => {
+      await type(page, text);
+      await page.$eval('#result', (r) => r.replaceChildren());
+      await run(page, button);
+      return say();
+    };
+    const CHECK = 'Check needs at least 40 characters, a sentence or two. Select more.';
+    const REWRITE = 'Rewrite needs at least a sentence of eight words. Select more.';
+    ok('short: opened on two words, Check says it needs 40 characters and sends nothing', (await say()) === CHECK && !callsOf('short').length, `${await say()} ${callsOf('short').join(',')}`);
+    const checked = await attempt('#check', 'Too short to check here.');
+    ok('short: Check in the pane says the same', checked === CHECK && !callsOf('short').length, checked);
+    const refused = [await attempt('#rewrite', 'Too short to rewrite here.'), await attempt('#rewrite', 'Revenue rose 12% to 4.2M in Q3 2026.')];
+    ok('short: Rewrite says it needs a sentence of eight words and sends nothing', refused.every((m) => m === REWRITE) && !callsOf('short').length, `${refused.join(' | ')} ${callsOf('short').join(',')}`);
+    await attempt('#rewrite', 'We moved the office to Tivolska in March.');
+    ok('short: eight words are enough for Rewrite', callsOf('short').join() === '/v1/humanize', callsOf('short').join(','));
     await page.close();
   },
 
@@ -452,7 +542,7 @@ const SCENARIOS = {
     ok('limits: over 5,000 characters without a key is explained, no call', /5,000/.test(longMsg) && mock.calls.length === calls, longMsg.slice(0, 100));
     if (!LIVE) {
       mock.status = { code: 429, error: { type: 'free_limit', message: 'Free limit reached.', signup_url: 'https://p3n.si/register', retry_after_seconds: 1500 } };
-      await page.evaluate(() => { const t = document.querySelector('#text'); t.value = 'A short text to check.'; t.dispatchEvent(new Event('input')); });
+      await type(page, P2);
       await run(page, '#check');
       mock.status = null;
       const msg = await page.$eval('#result', (r) => r.innerText);
@@ -486,7 +576,7 @@ const SCENARIOS = {
     ok('settings: focus returns to the API key link', await page.evaluate(() => document.activeElement?.id === 'account'));
     // The key goes out as a bearer token.
     const n = mock.calls.length;
-    await page.evaluate(() => { const t = document.querySelector('#text'); t.value = 'A short text to check.'; t.dispatchEvent(new Event('input')); });
+    await type(page, P2);
     await run(page, '#check');
     ok('settings: checks send the key as a bearer token', mock.calls[n] === '/v1/detect' && mock.auth[n] === 'Bearer p3n_good_key', `${mock.calls[n]} ${mock.auth[n]}`);
     await page.close();
@@ -494,21 +584,18 @@ const SCENARIOS = {
 
   // ---- Excel ----------------------------------------------------------------------------------
 
-  // Several cells: each with text comes in as a paragraph, numbers stay out. A rewrite of them can be
-  // copied but not put back, and the pane says why. A whole column is read only where the sheet has data.
+  // Several cells: each with text comes in as a paragraph, numbers stay out, and opening the pane checks them. A
+  // rewrite of them can be copied but not put back, and the pane says why. A whole column is read only where the
+  // sheet has data.
   async excelCheck() {
     const page = await openPane({ name: 'excelCheck', host: 'Excel' });
-    const calls = mock.calls.length;
     await boot(page, ['A1:B3']);
-    await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 }).catch(() => {});
     const box = await page.$eval('#text', (t) => t.value);
     ok('excel: the selected cells are in the box when the pane opens', box === ['Notes', 'Hours', P1, P2].join('\n\n'), JSON.stringify(box.slice(0, 50)));
-    ok('excel: nothing is sent before a click', !mock.pages.slice(calls).includes('excelCheck'), mock.calls.slice(calls).join(','));
-    ok('excel: the link counts the words in the cells', /Use selection \(\d+ words\)/.test(await page.$eval('#grab', (b) => b.textContent)));
-    ok('excel: the box suggests selecting cells', /Select cells/.test(await page.$eval('#text', (t) => t.placeholder)));
-    await run(page, '#check');
-    ok('excel: Check shows a result', /likely AI/.test(await page.$eval('#result', (r) => r.innerText)));
+    ok('excel: opening the pane checks the cells, with one call', /likely AI/.test(await page.$eval('#result', (r) => r.innerText)) && callsOf('excelCheck').join() === '/v1/detect', callsOf('excelCheck').join(','));
     ok('excel: the call names the client (X-P3N-Client)', clientsOf('excelCheck').join() === `p3n-excel/${PKG.version}`, clientsOf('excelCheck').join(', '));
+    const ui = await page.evaluate(() => ({ link: document.querySelector('#grab').textContent, placeholder: document.querySelector('#text').placeholder }));
+    ok('excel: with cells selected the box and the link both say Use selection', /^Use selection \(\d+ words\)$/.test(ui.link) && ui.placeholder === 'Select cells and click Use selection. Or paste text here.', JSON.stringify(ui));
     await run(page, '#rewrite');
     const kept = await page.$eval('#result', (r) => r.innerText);
     ok('excel: a rewrite of several cells has Copy but no Replace, and says why', !(await hasButton(page, 'Replace')) && (await hasButton(page, 'Copy')) && /single cell/.test(kept), kept.split('\n').slice(-3).join(' '));
@@ -533,7 +620,7 @@ const SCENARIOS = {
     const a4 = await cell(page, 'A4');
     ok('excel: the rewrite is in the cell, as text', a4.value === rewriteOf(P3) && a4.type === 'String', JSON.stringify(a4));
     const rest = await Promise.all(['A2', 'A3', 'B3', 'B4', 'A7'].map((a) => cell(page, a)));
-    ok('excel: the other cells are untouched, the formula too', rest[0].value === P1 && rest[1].value === P2 && rest[2].value === 30 && rest[3].formula === '="Owner: "&"Maja"' && rest[4].value === P7);
+    ok('excel: the other cells are untouched, the formula too', rest[0].value === P1 && rest[1].value === P2 && rest[2].value === 30 && rest[3].formula === FORMULA && rest[4].value === P7);
     ok('excel: the cell is selected', (await page.evaluate(() => window.__book.selected())) === `${SHEET}!A4`);
     const msg = await note(page);
     ok('excel: says where and how to undo', /A4/.test(msg) && /Ctrl\+Z/.test(msg), msg);
@@ -576,7 +663,7 @@ const SCENARIOS = {
     const page = await openPane({ name: 'excelFormula', host: 'Excel' });
     await boot(page, ['B4']);
     await page.waitForFunction(() => document.querySelector('#text').value, { timeout: 5000 });
-    ok('excel: a formula\'s text comes in', (await page.$eval('#text', (t) => t.value)) === 'Owner: Maja');
+    ok('excel: a formula\'s text comes in', (await page.$eval('#text', (t) => t.value)) === OWNER);
     await run(page, '#rewrite');
     ok('excel: no Replace over a formula, and it says so', !(await hasButton(page, 'Replace')) && /formula/.test(await page.$eval('#result', (r) => r.innerText)));
     await page.close();
@@ -617,8 +704,11 @@ const SCENARIOS = {
   async excelEmpty() {
     const page = await openPane({ name: 'excelEmpty', host: 'Excel' });
     await page.evaluateOnNewDocument((n) => { window.__setup[n].Z1000 = 'far away'; }, SHEET);
-    await boot(page, ['D10']);
+    await boot(page, ['D10'], { checked: false });
+    await pause(400);
+    ok('excel: opened on an empty cell, nothing is sent', !callsOf('excelEmpty').length && !(await page.$eval('#result', (r) => r.textContent)), callsOf('excelEmpty').join(','));
     ok('excel: an empty cell offers Use selection, and Check waits for text', (await page.$eval('#grab', (b) => b.textContent)) === 'Use selection' && (await page.$eval('#check', (b) => b.disabled)));
+    ok('excel: with nothing selected the box still says Use selection', (await page.$eval('#text', (t) => t.placeholder)) === 'Select cells and click Use selection. Or paste text here.');
     await grab(page);
     ok('excel: Use selection on an empty cell says to select text', /no text/.test(await page.$eval('#hint', (h) => h.textContent)));
     await page.evaluate(() => window.__book.select('A1:Z1000'));
@@ -651,7 +741,10 @@ const SCENARIOS = {
     if (LIVE) return;
     for (const [ground, rgb] of [['#262626', 'rgb(38, 38, 38)'], ['#4a4a4a', 'rgb(74, 74, 74)']]) {
       const page = await openPane({ name: 'theme', theme: officeDark(ground) });
-      await boot(page, [P1]);
+      // Selected with the pane open, so nothing has run yet.
+      await boot(page);
+      await page.evaluate((p) => window.__doc.select(p), P1);
+      await grab(page);
       let t = await paneTheme(page);
       ok(`theme: a dark Office theme on ${ground} darkens the pane on Office's colour`, t.theme === 'dark' && t.bg === rgb && t.logo === 'assets/logo-dark.png', JSON.stringify(t));
       const before = await page.evaluate(lowContrast);
@@ -753,7 +846,8 @@ const SCENARIOS = {
     page.on('request', (r) => (r.url().startsWith(base) ? r.continue() : r.abort()));
     await page.goto(`${base}/taskpane.html`);
     await page.waitForFunction(() => !document.querySelector('#hint').hidden, { timeout: 5000 }).catch(() => {});
-    ok('browser: without Office.js the pane explains and still takes pasted text', await page.evaluate(() => document.querySelector('#grab').hidden && /Open p3n from Word/.test(document.querySelector('#hint').textContent)));
+    ok('browser: without Office.js the pane explains and still takes pasted text', await page.evaluate(() => document.querySelector('#grab').hidden && /Open p3n from Word/.test(document.querySelector('#hint').textContent)
+      && document.querySelector('#text').placeholder === 'Paste text here.'));
     // Without Office's theme the system's light or dark decides, live.
     const scheme = async (value) => {
       await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value }]);
