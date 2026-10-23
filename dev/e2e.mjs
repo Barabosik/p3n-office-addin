@@ -190,6 +190,27 @@ async function run(page, button) {
   await click(page, button);
   await page.waitForFunction(settled, { timeout: 120000, polling: 100 });
 }
+// The pane beside the document as the stub draws it (__doc.html()): each annotation as a tint and an underline, solid
+// red for a listed sentence and dotted berry for a pattern hit. A picture of the stub's model, not of real Word.
+async function withDocument(page, file, dark) {
+  const pane = await page.screenshot({ encoding: 'base64', fullPage: true });
+  const doc = await page.evaluate(() => window.__doc.html());
+  const c = dark ? { canvas: '#1b1b1b', page: '#262626', ink: '#e8e8e8', muted: '#a6a6a6', head: '#8fb4e8' } : { canvas: '#f3f2f1', page: '#ffffff', ink: '#1f1f1f', muted: '#605e5c', head: '#2f5496' };
+  const shot = await browser.newPage();
+  await shot.setViewport({ width: 960, height: 900, deviceScaleFactor: 2 });
+  await shot.setContent(`<!doctype html><meta charset="utf-8"><style>
+    body { margin: 0; padding: 24px; display: flex; gap: 24px; align-items: flex-start; background: ${c.canvas}; font: 15px/1.6 'Segoe UI', system-ui, sans-serif; color: ${c.ink}; }
+    .doc { flex: 1; } .cap { margin: 0 0 8px; font-size: 12px; color: ${c.muted}; }
+    .page { background: ${c.page}; padding: 40px 48px; box-shadow: 0 1px 3px rgb(0 0 0 / .2); }
+    .page p { margin: 0 0 12px; } .page p[data-style="Heading 1"] { font-size: 22px; color: ${c.head}; }
+    mark { color: inherit; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+    mark[data-scheme="Red"] { background: rgb(209 52 56 / .16); text-decoration: underline solid #d13438; }
+    mark[data-scheme="Berry"] { background: rgb(194 57 179 / .12); text-decoration: underline dotted #c239b3; }
+    img { width: 320px; flex: none; box-shadow: 0 1px 3px rgb(0 0 0 / .2); }
+  </style><div class="doc"><p class="cap">The document as dev/office-stub.js draws Word's annotations (not real Word)</p><div class="page">${doc}</div></div><img src="data:image/png;base64,${pane}" alt="">`);
+  await shot.screenshot({ path: path.join(OUT, file), fullPage: true });
+  await shot.close();
+}
 async function replaceNow(page) {
   await page.evaluate(() => { const s = document.querySelector('#result [data-status]'); if (s) s.hidden = true; });
   await clickText(page, 'Replace in');
@@ -920,6 +941,151 @@ const SCENARIOS = {
       ok(`foot: ${mode}: at 320px the link sits on one line and the pill stays on the right, with or without a key`, Object.values(free).every(Boolean) && Object.values(keyFits).every(Boolean) && keyed.link && /^Balance \$4\.20/.test(keyed.quota), JSON.stringify({ free, keyFits, keyed }));
       await page.close();
     }
+  },
+
+  // After a Check of text from the document, Word marks the sentences it lists (Red) and the pattern hits' sentences
+  // (Berry) with annotations, placed by paragraph and offset, and writes nothing into the document. Matched as the
+  // engine matches (lib/match.js), only inside the text checked. They go on the next Check or Rewrite, on an edit to
+  // that text, and with Clear highlights. A Word without annotations, and Excel, get the list only.
+  async marks() {
+    if (LIVE) return;
+    const LONG = `In the end, ${'every team that writes plainly, '.repeat(9)}wins.`;
+    const PA = 'Intro words here. It’s a “game-changer” for every team.';
+    const PB = 'We  value\vclear   writing. This changes everything.';
+    const PC = `${LONG} This changes everything. Moreover, the plan works.`;
+    const PD = 'This changes everything. Only here, outside the selection.';
+    const MDOC = [{ text: 'Team notes', style: 'Heading 1' }, PA, PB, PC, PD];
+    // From partway into the first paragraph to the end of the third.
+    const SELECT = [PA.slice(18), PB, PC].join('\r');
+    const ANSWER = {
+      sentences: [
+        { text: 'It\'s a "game-changer" for every team.', why: 'A stock phrase.' },
+        { text: 'We value clear writing.', why: 'A claim with nothing behind it.' },
+        { text: 'This changes everything.', why: 'Hype.' },
+        { text: 'This changes everything.', why: 'Hype, again.' },
+        { text: '"MOREOVER, THE PLAN WORKS!"', why: 'A connector that adds nothing.' },
+      ],
+      examples: [
+        { sentence: LONG, rules: [{ name: 'Repetition' }] },
+        { sentence: 'Intro words here.', rules: [{ name: 'Filler' }] },
+        { sentence: '“Only here, outside the selection.”', rules: [{ name: 'Filler' }] },
+        { sentence: 'Not in this document at all.', rules: [{ name: 'Filler' }] },
+      ],
+    };
+    const want = [
+      { paragraph: 1, start: 18, text: 'It’s a “game-changer” for every team', colorScheme: 'Red' },
+      { paragraph: 2, start: 0, text: 'We  value\vclear   writing', colorScheme: 'Red' },
+      { paragraph: 2, start: PB.indexOf('This'), text: 'This changes everything', colorScheme: 'Red' },
+      { paragraph: 3, start: 0, text: LONG.slice(0, -1), colorScheme: 'Berry' },
+      { paragraph: 3, start: PC.indexOf('This'), text: 'This changes everything', colorScheme: 'Red' },
+      { paragraph: 3, start: PC.indexOf('Moreover'), text: 'Moreover, the plan works', colorScheme: 'Red' },
+    ];
+    const marked = (page) => page.evaluate(() => window.__doc.annotations());
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const shown = (page) => page.waitForFunction(() => document.querySelector('#result [data-marks] button'), { timeout: 5000 });
+    const open = async (opts) => {
+      const page = await openPane({ name: 'marks', ...opts });
+      await page.setViewport({ width: 320, height: 900, deviceScaleFactor: 2 });
+      await page.evaluateOnNewDocument((d) => { window.__setup = d; }, MDOC);
+      return page;
+    };
+    mock.detectOutput = ANSWER;
+
+    let page = await open({});
+    await boot(page, [SELECT]);
+    // The matcher on its own.
+    const m = await page.evaluate(async () => {
+      const { locate } = await import('./lib/match.js');
+      const at = (text, list) => locate(text, list).map((s) => s && text.slice(s.start, s.end));
+      return { quotes: at('She said “it’s fine” today.', ['She said "it\'s fine" today.']), space: at('One  two\r\nthree\vfour.', ['one two three four']),
+        edge: at('(Plain words!)', ['“plain WORDS.”']), repeat: locate('Go now. Go now. Go now.', ['Go now.', 'Go now.']).map((s) => s.start),
+        whole: locate('It worksheet. It works.', ['It works.'])[0]?.start, missing: locate('Some text.', ['Nothing like it.']) };
+    });
+    ok('marks: the matcher takes curly quotes as straight, whitespace runs as one space, any case, no edge punctuation; a repeat its next occurrence; whole words; null when not there',
+      same(m.quotes, ['She said “it’s fine” today']) && same(m.space, ['One  two\r\nthree\vfour']) && same(m.edge, ['Plain words']) && same(m.repeat, [0, 8]) && m.whole === 14 && same(m.missing, [null]), JSON.stringify(m));
+
+    await shown(page);
+    let got = await marked(page);
+    // The mark at want[i]'s place, without its length (its text says it).
+    const pick = (i) => { const { length, ...g } = got.find((x) => x.paragraph === want[i].paragraph && x.start === want[i].start) ?? {}; return same(g, want[i]); };
+    ok('marks: a listed sentence is marked on its paragraph, at its offset from the paragraph start (the selection starts partway in)', pick(0), JSON.stringify(got[0]));
+    ok('marks: curly quotes, runs of spaces and a line break, another case and edge punctuation all match', pick(0) && pick(1) && pick(5), JSON.stringify(got.map((g) => g.text.slice(0, 30))));
+    ok('marks: a sentence listed twice takes its next occurrence in the checked text, not the one outside it', pick(2) && pick(4) && !got.some((g) => g.paragraph === 4), JSON.stringify(got.filter((g) => g.text === 'This changes everything')));
+    ok(`marks: a pattern hit has the second colour, a ${LONG.length}-character sentence too (placed by offset, no search)`, pick(3), JSON.stringify({ ...got.find((g) => g.colorScheme === 'Berry'), text: undefined }));
+    const list = await page.$eval('#result', (r) => r.innerText);
+    ok("marks: a sentence outside the checked text, or not in the document, isn't marked; the pane still lists it", got.length === want.length && !got.some((g) => g.paragraph === 1 && g.start === 0)
+      && ['Intro words here.', 'Only here, outside the selection.', 'Not in this document at all.'].every((t) => list.includes(t)), `${got.length} marks`);
+    const kept = await page.evaluate(() => ({ edits: window.__doc.edits(), formats: window.__doc.formatWrites(), styles: window.__doc.styles(), paras: window.__doc.paragraphs() }));
+    ok('marks: nothing is written into the document: no text edits, no highlight or other formatting', !kept.edits && !kept.formats.length && same(kept.styles, MDOC.map((p) => p.style ?? 'Normal')) && same(kept.paras, MDOC.map((p) => p.text ?? p)), JSON.stringify({ edits: kept.edits, formats: kept.formats }));
+    ok('marks: Clear highlights by the result', await hasButton(page, 'Clear highlights'));
+    await pause(1300);
+    await withDocument(page, 'pane-marks-light.png', false);
+
+    // An edit elsewhere leaves them; Check again swaps them for new ones.
+    await page.evaluate(() => window.__doc.type('Team notes', 'Team notes, October'));
+    await pause(500);
+    got = await marked(page);
+    ok('marks: an edit elsewhere in the document keeps them', got.length === want.length && await hasButton(page, 'Clear highlights'), `${got.length} marks`);
+    const calls = await page.evaluate(() => window.__doc.annotationCalls());
+    await run(page, '#check');
+    await shown(page);
+    got = await marked(page);
+    ok('marks: Check again takes the old ones out before it marks again', got.length === want.length && (await page.evaluate(() => window.__doc.annotationCalls())) > calls, `${got.length} marks`);
+
+    // Clear highlights.
+    await page.click('#result [data-marks] button');
+    await page.waitForFunction(() => !window.__doc.annotations().length, { timeout: 5000 }).catch(() => {});
+    const cleared = await page.evaluate(() => { const p = document.querySelector('#result [data-marks] p'); return { marks: window.__doc.annotations().length, note: p?.textContent, focus: document.activeElement === p }; });
+    ok('marks: Clear highlights takes them out, says so, and focus stays there', !cleared.marks && cleared.note === 'Highlights cleared.' && cleared.focus, JSON.stringify(cleared));
+
+    // Rewrite.
+    await run(page, '#check');
+    await shown(page);
+    await run(page, '#rewrite');
+    await page.waitForFunction(() => !window.__doc.annotations().length, { timeout: 5000 }).catch(() => {});
+    ok('marks: Rewrite takes them out', !(await marked(page)).length && !(await hasButton(page, 'Clear highlights')) && await hasButton(page, 'Replace in document'));
+
+    // An edit to the text checked.
+    await run(page, '#check');
+    await shown(page);
+    await page.evaluate(() => window.__doc.type('clear   writing', 'plain writing'));
+    await page.waitForFunction(() => !window.__doc.annotations().length, { timeout: 5000 }).catch(() => {});
+    const edited = await page.evaluate(() => ({ marks: window.__doc.annotations().length, note: document.querySelector('#result [data-marks] p')?.textContent }));
+    ok('marks: an edit to the text checked takes them out, and the pane says why', !edited.marks && edited.note === 'Highlights cleared: the text changed.', JSON.stringify(edited));
+
+    // Text typed in the pane isn't in the document: nothing to mark.
+    await type(page, `${P2} Typed here.`);
+    await run(page, '#check');
+    await pause(300);
+    ok('marks: text typed or pasted in the pane marks nothing', !(await marked(page)).length && !(await hasButton(page, 'Clear highlights')));
+    await page.close();
+
+    // Dark, for the capture.
+    page = await open({ theme: officeDark('#262626') });
+    await boot(page, [SELECT]);
+    await shown(page);
+    await pause(1300);
+    await withDocument(page, 'pane-marks-dark.png', true);
+    await page.close();
+
+    // Word before WordApi 1.7: the list only, and nothing touches the document.
+    page = await open({});
+    await page.evaluateOnNewDocument(() => { window.__wordApi = '1.3'; });
+    await boot(page, [SELECT]);
+    await pause(500);
+    const old = await page.evaluate(() => ({ calls: window.__doc.annotationCalls(), edits: window.__doc.edits(), formats: window.__doc.formatWrites().length,
+      listed: document.querySelectorAll('#result .quotes li').length, text: document.querySelector('#result').innerText }));
+    ok('marks: a Word without annotations (before WordApi 1.7) marks nothing and writes nothing; the list stays, with no button or notice', !old.calls && !old.edits && !old.formats && old.listed === 9
+      && !/Clear highlights|in the document until/.test(old.text), JSON.stringify({ ...old, text: undefined }));
+    await page.close();
+
+    // Excel: the list only.
+    page = await openPane({ name: 'marksExcel', host: 'Excel' });
+    await boot(page, ['A2']);
+    await pause(300);
+    ok('marks: Excel marks nothing', !(await hasButton(page, 'Clear highlights')) && /Sentences that read as AI/.test(await page.$eval('#result', (r) => r.innerText)));
+    await page.close();
+    mock.detectOutput = null;
   },
 
   // Outside Office (the pane opened in a plain browser): paste still works, no selection link.

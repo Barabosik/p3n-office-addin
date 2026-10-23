@@ -13,14 +13,15 @@ const els = {
 };
 // host: the Word or Excel glue and words below, once Office says where the pane runs.
 // source: where the text came from ({ sent, ref, where, why }); ref is the glue's handle on it for Replace,
-// and null when it can't go back there (why says why).
-const state = { key: apiKey.get(), host: null, source: null, controller: null, timer: null, free: freeLeft.get(), selected: null };
+// and null when it can't go back there (why says why). canMark: this Word can mark a Check's sentences in the document.
+const state = { key: apiKey.get(), host: null, source: null, controller: null, timer: null, free: freeLeft.get(), selected: null, canMark: false };
 
 // What differs between Word and Excel: the glue, the API version it needs, and the words for where text lives.
-// The box's placeholder names the selection link as it reads with something selected or nothing.
+// The box's placeholder names the selection link as it reads with something selected or nothing. Word can also mark
+// what a Check lists in the document, with annotations (`marks`, the version they need).
 const HOSTS = {
   Word: {
-    glue: word, api: ['WordApi', '1.3'],
+    glue: word, api: ['WordApi', '1.3'], marks: ['WordApi', '1.7'],
     placeholder: (selected) => (selected
       ? 'Select text in your document and click Use selection. Or paste it here.'
       : 'Select text in your document, or click Use whole document. Or paste text here.'),
@@ -266,6 +267,7 @@ function watchSelection() {
 async function start(skill, text, options) {
   text = (text || '').trim();
   if (!text) return;
+  clearMarks();
   state.controller?.abort();
   if (text.length > limit()) {
     return showError(new ApiError(422, 'too_long', state.key
@@ -330,6 +332,15 @@ function render(run, text, skill) {
   els.result.replaceChildren(box);
   runScore(box);
   reveal(els.result);
+  if (skill === 'detect') mark(o, text, box.querySelector('[data-marks]'));
+}
+
+// The sentences listed under a Check's score, and the pattern hits whose sentence isn't one of them.
+function listed(o) {
+  const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
+  const sentences = (o.sentences ?? []).slice(0, 5);
+  const shown = new Set(sentences.map((s) => norm(s.text)));
+  return { sentences, hits: (o.examples ?? []).filter((e) => !shown.has(norm(e.sentence))).slice(0, 6) };
 }
 
 // The big number: animated for the eye, stated once for screen readers (the result is a live region).
@@ -347,21 +358,84 @@ function renderDetect(o) {
   if (o.verdict) parts.push(h('p', {}, o.verdict));
   if (o.confidence?.level) parts.push(h('p', { class: 'small muted' }, `Confidence ${o.confidence.level}: ${o.confidence.reason ?? ''}`));
   // The pane is narrow: the sentences come first, and a pattern hit is listed only if its sentence isn't already there.
-  const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
-  const shown = new Set((o.sentences ?? []).slice(0, 5).map((s) => norm(s.text)));
-  if (shown.size) {
+  const { sentences, hits } = listed(o);
+  if (sentences.length) {
     parts.push(h('div', {}, h('h3', {}, 'Sentences that read as AI'),
-      h('ul', { class: 'quotes' }, o.sentences.slice(0, 5).map((s, j) => h('li', { class: 'hit', style: `--j:${j}` }, s.why ? h('span', { class: 'why' }, s.why) : null, h('q', {}, clip(s.text)))))));
+      h('ul', { class: 'quotes' }, sentences.map((s, j) => h('li', { class: 'hit', style: `--j:${j}` }, s.why ? h('span', { class: 'why' }, s.why) : null, h('q', {}, clip(s.text)))))));
   }
-  const hits = (o.examples ?? []).filter((e) => !shown.has(norm(e.sentence))).slice(0, 6);
   if (hits.length) {
     parts.push(h('div', {}, h('h3', {}, 'Pattern hits'),
       h('ul', { class: 'quotes' }, hits.map((e) => h('li', {},
         h('span', { class: 'why' }, (e.rules ?? []).map((r) => String(r.name ?? '').replace(/\s*\(LLM\)$/, '')).join(' · ')),
         h('q', {}, clip(e.sentence)))))));
   }
+  // Clear highlights goes here once Word has marked them (mark()).
+  parts.push(h('div', { class: 'row', 'data-marks': true, hidden: true }));
   parts.push(h('p', { class: 'small muted' }, 'A score is a probability, not proof. Read the sentences yourself before deciding anything about a person.'));
   return parts;
+}
+
+// ---- marks in the document ---------------------------------------------------------------
+
+// After a Check of text taken from Word and still the same there, Word marks the sentences listed and the pattern hits'
+// sentences with annotations (lib/word.js), which aren't saved in the document. They go on the next Check or Rewrite,
+// when that text is edited (by anyone), and with Clear highlights. A Word without annotations gets the list only:
+// highlighting written into the document could be left behind (a save, a closed pane, a co-author), so p3n never
+// writes it. `gen` drops marks that land after a newer Check or Rewrite started; `clearing` is the removal under way,
+// which new marks wait for.
+const marks = { gen: 0, ids: [], ref: null, clearing: Promise.resolve() };
+
+async function mark(o, sent, slot) {
+  const s = state.source;
+  if (!state.canMark || !slot || !s?.ref || s.sent.trim() !== sent) return;
+  const gen = marks.gen;
+  const { sentences, hits } = listed(o);
+  const items = [...sentences.map((x) => ({ text: x.text, kind: 'sentence' })), ...hits.map((e) => ({ text: e.sentence, kind: 'hit' }))];
+  let got;
+  try {
+    await marks.clearing;
+    got = await state.host.glue.annotate(s.ref, items);
+  } catch { return; }
+  if (gen !== marks.gen || !got.ids.length) return state.host.glue.unannotate(got);
+  Object.assign(marks, got);
+  watchEdits();
+  slot.replaceChildren(h('button', { type: 'button', class: 'link small', onclick: () => clearMarks('Highlights cleared.', true) }, 'Clear highlights'));
+  slot.hidden = false;
+}
+
+// Takes the marks out of the document. With a note, the button by the result gives way to it (and focus to it, when
+// the button was clicked); without, as a new Check or Rewrite starts, it just goes.
+function clearMarks(note = '', focus = false) {
+  marks.gen++;
+  const got = { ids: marks.ids, ref: marks.ref };
+  Object.assign(marks, { ids: [], ref: null });
+  const slot = els.result.querySelector('[data-marks]');
+  if (slot && !slot.hidden) {
+    if (note) {
+      const said = h('p', { class: 'small muted', tabindex: '-1' }, note);
+      slot.replaceChildren(said);
+      if (focus) said.focus();
+    } else {
+      slot.hidden = true;
+    }
+  }
+  if (got.ids.length || got.ref) marks.clearing = marks.clearing.then(() => state.host.glue.unannotate(got)).catch(() => {});
+  return marks.clearing;
+}
+
+// An edit anywhere raises Word's paragraph events; the marks go only if the text they're on reads differently now.
+let watching = false;
+function watchEdits() {
+  if (watching) return;
+  watching = true;
+  let timer;
+  state.host.glue.onEdit(() => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const ref = marks.ref;
+      if (ref && !(await state.host.glue.unchanged(ref)) && marks.ref === ref) clearMarks('Highlights cleared: the text changed.');
+    }, 200);
+  }).catch(() => { watching = false; });
 }
 
 async function copyText(text) {
@@ -602,6 +676,7 @@ function openedByUser() {
     return;
   }
   state.host = host;
+  state.canMark = !!host.marks && Office.context.requirements.isSetSupported(...host.marks);
   refreshGrab();
   await watchSelection();
   // Opened with text selected: take it in and, if the user opened the pane, check it as Check here would. Too

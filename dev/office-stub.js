@@ -3,13 +3,25 @@
 // Word: the document is one string with \r at the end of each paragraph, like Word's range.text, plus a
 // style per paragraph. Ranges are live: every edit shifts them, the way Word keeps tracked ranges in
 // place. It also enforces Word's rules the pane must follow: a property is readable only after load()
-// and sync(), and an object can be reused in a later Word.run only if it was tracked. Excel's model is
-// further down.
+// and sync(), and an object can be reused in a later Word.run only if it was tracked. Annotations (WordApi
+// 1.7) sit beside the text and move with it, edits raise the paragraph events, and a write to a range's
+// font is recorded rather than made. Excel's model is further down.
 (() => {
   const HOST = globalThis.__host ?? 'Word';
+  // The newest WordApi this Word has: 1.7 (annotations) unless window.__wordApi names an older one.
+  const WORD_API = globalThis.__wordApi ?? '1.7';
+  const atLeast = (have, want = '1.1') => { const [a, b] = have.split('.').map(Number); const [c, d] = String(want).split('.').map(Number); return a > c || (a === c && b >= d); };
   const handlers = []; // DocumentSelectionChanged, in either app
   const fireSelection = () => { for (const h of handlers) h({ type: 'documentSelectionChanged' }); };
-  const doc = { text: '', styles: [], flags: [], selection: [0, 0], ranges: new Set(), edits: 0 };
+  // annotations: id -> { _s, _e, colorScheme }, live like ranges. formatWrites: every formatting property the pane set.
+  const doc = { text: '', styles: [], flags: [], ids: [], selection: [0, 0], ranges: new Set(), edits: 0, annotations: new Map(), annotationCalls: 0, formatWrites: [] };
+  let serial = 0;
+  const newId = () => `0000000${++serial}-0000-4000-8000-000000000000`.slice(-36);
+  // Word's paragraph events (WordApi 1.6), raised after an edit like the selection event.
+  const paraHandlers = { ParagraphChanged: [], ParagraphAdded: [], ParagraphDeleted: [] };
+  const fireParagraphs = (byType) => setTimeout(() => {
+    for (const [type, ids] of Object.entries(byType)) if (ids.length) for (const h of paraHandlers[type]) h({ type, source: 'Local', uniqueLocalIds: ids });
+  }, 5);
   const marks = () => [...doc.text.matchAll(/\r/g)].map((m) => m.index);
   const paraSpans = () => {
     let s = 0;
@@ -26,26 +38,30 @@
     const firstGone = before.findIndex((m) => m >= s);
     // A deleted mark takes its paragraph's style with it; the surviving paragraph keeps the style of
     // the mark at the end. New marks copy the style of the paragraph they split.
+    const deleted = gone ? doc.ids.splice(firstGone, gone) : [];
     if (gone) {
       doc.styles.splice(firstGone, gone);
       doc.flags.splice(firstGone, gone);
     }
     doc.text = doc.text.slice(0, s) + inserted + doc.text.slice(e);
     const added = (inserted.match(/\r/g) ?? []).length;
+    const fresh = Array.from({ length: added }, newId);
     if (added) {
       const at = before.filter((m) => m < s).length;
       doc.styles.splice(at, 0, ...Array(added).fill(doc.styles[at] ?? 'Normal'));
       doc.flags.splice(at, 0, ...Array(added).fill({}));
+      doc.ids.splice(at, 0, ...fresh);
     }
     // Points before the edit stay, points after it move by the change in length, and a range that
-    // ended inside the replaced text now ends after the new text.
+    // ended inside the replaced text now ends after the new text. Annotations move the same way.
     const delta = inserted.length - (e - s);
     const shift = (p, isEnd) => (p <= s ? p : p >= e ? p + delta : isEnd ? s + inserted.length : s);
-    for (const r of doc.ranges) {
+    for (const r of [...doc.ranges, ...doc.annotations.values()]) {
       r._s = shift(r._s, false);
       r._e = Math.max(r._s, shift(r._e, true));
     }
     doc.edits++;
+    fireParagraphs({ ParagraphChanged: [doc.ids[marks().filter((m) => m < s).length]].filter(Boolean), ParagraphAdded: fresh, ParagraphDeleted: deleted });
     return [s, s + inserted.length];
   }
 
@@ -56,8 +72,10 @@
     get trackedObjects() { return { add: (o) => this.tracked.add(o), remove: (o) => this.tracked.delete(o) }; }
     async sync() {
       await new Promise((r) => setTimeout(r, 1));
-      for (const o of this.pending) o._snapshot();
+      // A batch that fails is gone, as in Word: the next sync() doesn't run it again.
+      const batch = [...this.pending];
       this.pending.clear();
+      for (const o of batch) o._snapshot();
     }
   }
 
@@ -87,6 +105,11 @@
     get text() { return this._get('text'); }
     get isNullObject() { return this._get('isNullObject'); }
     get style() { return this._get('style'); }
+    // Formatting the pane must never write (highlightColor, colour, bold...): each write is recorded for the test.
+    get font() {
+      this._check();
+      return new Proxy({}, { set: (_, name, value) => { doc.formatWrites.push(`font.${String(name)}=${value}`); return true; }, get: () => null });
+    }
     get paragraphs() {
       this._check();
       const spans = paraSpans().filter((sp) => (this._s === this._e ? sp.start <= this._s && this._s <= sp.end : sp.start < this._e && sp.end >= this._s));
@@ -139,6 +162,24 @@
       if (where === 'End') return new RangeProxy(this.context, this._e - 1, this._e - 1);
       return super.getRange(where);
     }
+    // Annotations (WordApi 1.7): each critique is an offset and a length inside this paragraph's text, which must fit
+    // in it. Kept apart from the text, so they write nothing into it; the ids come back at sync().
+    insertAnnotations(set) {
+      this._check();
+      if (!atLeast(WORD_API, '1.7')) throw err('ApiNotFound', 'stub: Paragraph.insertAnnotations needs WordApi 1.7');
+      const size = this._e - 1 - this._s;
+      const ids = (set?.critiques ?? []).map((c) => {
+        if (!(Number.isInteger(c.start) && c.length > 0 && c.start >= 0 && c.start + c.length <= size)) throw err('InvalidArgument', `stub: a critique at ${c.start} for ${c.length} doesn't fit a paragraph of ${size}`);
+        if (!['Red', 'Green', 'Blue', 'Lavender', 'Berry'].includes(c.colorScheme)) throw err('InvalidArgument', `stub: no colour scheme ${c.colorScheme}`);
+        const id = newId();
+        doc.annotations.set(id, { _s: this._s + c.start, _e: this._s + c.start + c.length, colorScheme: c.colorScheme });
+        return id;
+      });
+      doc.annotationCalls++;
+      const result = { value: undefined };
+      this.context.pending.add({ _snapshot: () => { result.value = ids; } });
+      return result;
+    }
   }
 
   class Collection extends ClientObject {
@@ -151,6 +192,18 @@
     constructor(ctx) { this.context = ctx; }
     getSelection() { return new RangeProxy(this.context, ...doc.selection); }
     get body() { const ctx = this.context; return { getRange: () => new RangeProxy(ctx, 0, doc.text.length) }; }
+    // delete() happens at sync(), which fails with ItemNotFound if the annotation is gone, as in Word.
+    getAnnotationById(id) {
+      if (!atLeast(WORD_API, '1.7')) throw err('ApiNotFound', 'stub: Document.getAnnotationById needs WordApi 1.7');
+      return { delete: () => { this.context.pending.add({ _snapshot: () => { if (!doc.annotations.delete(id)) throw err('ItemNotFound', `stub: no annotation ${id}`); } }); } };
+    }
+    get onParagraphChanged() { return this._event('ParagraphChanged'); }
+    get onParagraphAdded() { return this._event('ParagraphAdded'); }
+    get onParagraphDeleted() { return this._event('ParagraphDeleted'); }
+    _event(type) {
+      if (!atLeast(WORD_API, '1.6')) throw err('ApiNotFound', `stub: on${type} needs WordApi 1.6`);
+      return { add: (h) => { paraHandlers[type].push(h); return { remove: () => paraHandlers[type].splice(paraHandlers[type].indexOf(h), 1) }; } };
+    }
   }
 
   // ---- Excel -----------------------------------------------------------------------------------
@@ -331,7 +384,7 @@
     EventType: { DocumentSelectionChanged: 'documentSelectionChanged', OfficeThemeChanged: 'officeThemeChanged' },
     onReady: async () => ({ host: HOST, platform: 'PC' }),
     context: {
-      requirements: { isSetSupported: (name) => name === (HOST === 'Excel' ? 'ExcelApi' : 'WordApi') || (name === 'OpenBrowserWindowApi' && !globalThis.__noBrowserWindow) },
+      requirements: { isSetSupported: (name, version) => (HOST === 'Excel' ? name === 'ExcelApi' : name === 'WordApi' && atLeast(WORD_API, version)) || (name === 'OpenBrowserWindowApi' && !globalThis.__noBrowserWindow) },
       get officeTheme() { return globalThis.__theme ?? COLORFUL; },
       document: {
         // The add-in's settings stored in the document; window.__autoshow tags it to open the pane with it.
@@ -355,9 +408,13 @@
       doc.text = ps.map((p) => `${p.text}\r`).join('');
       doc.styles = ps.map((p) => p.style ?? 'Normal');
       doc.flags = ps.map((p) => ({ table: !!p.table, picture: !!p.picture }));
+      doc.ids = ps.map(newId);
       doc.selection = [0, 0];
       doc.edits = 0;
       doc.locked = false;
+      doc.annotations.clear();
+      doc.annotationCalls = 0;
+      doc.formatWrites = [];
     },
     // Selects `needle` (the nth match), or a whole paragraph with its mark (a triple-click) when `paragraph` is set.
     select(needle, { paragraph = null, nth = 0 } = {}) {
@@ -383,6 +440,27 @@
     selected: () => doc.text.slice(...doc.selection),
     edits: () => doc.edits,
     liveRanges: () => doc.ranges.size,
+    // The annotations in document order: the paragraph, the offset and length inside it, the text and the colour.
+    annotations: () => [...doc.annotations.values()].sort((a, b) => a._s - b._s).map((a) => {
+      const sp = paraSpans().find((x) => x.end >= a._s);
+      return { paragraph: sp.i, start: a._s - sp.start, length: a._e - a._s, text: doc.text.slice(a._s, a._e), colorScheme: a.colorScheme };
+    }),
+    annotationCalls: () => doc.annotationCalls,
+    formatWrites: () => [...doc.formatWrites],
+    // The document as the stub shows it: a <p> per paragraph, each annotation a <mark data-scheme>, for screenshots.
+    html: () => {
+      const esc = (t) => t.replace(/[&<>"]/g, (c) => `&${{ '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' }[c]};`).replace(/\v/g, '<br>');
+      const list = [...doc.annotations.values()].sort((a, b) => a._s - b._s);
+      return paraSpans().map((sp) => {
+        let out = '';
+        let at = sp.start;
+        for (const a of list.filter((x) => x._s >= sp.start && x._e <= sp.end)) {
+          out += `${esc(doc.text.slice(at, a._s))}<mark data-scheme="${a.colorScheme}">${esc(doc.text.slice(a._s, a._e))}</mark>`;
+          at = a._e;
+        }
+        return `<p data-style="${doc.styles[sp.i]}">${out}${esc(doc.text.slice(at, sp.end))}</p>`;
+      }).join('');
+    },
   };
 
   // The test's handle on the workbook.
