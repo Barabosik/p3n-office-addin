@@ -85,6 +85,8 @@ h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
 .settings code { font-size: 12.5px; background: var(--tint); padding: 1px 4px; border-radius: 4px; }
 
 footer.foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px 14px; }
+/* The quota, and the link to p3n.si on its own line under it; the theme pill stays on the right. */
+.about { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
 
 /* index.html, the front page of the pane's host. */
 .site main { flex: 0; width: 100%; max-width: 36rem; margin: 0 auto; padding: 56px 20px; }

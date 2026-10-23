@@ -19,7 +19,7 @@ npm install
 npm run e2e
 ```
 
-This loads the pane in headless Chrome with a stand-in for Office.js (`dev/office-stub.js`) that models a Word document and an Excel workbook, and answers API calls with canned results. It covers Check, Rewrite and Replace, the check that runs when the pane opens on a selection (and when it doesn't), the cases where Replace refuses, the limits, the API key, the manifests, and the pane's light and dark (`theme`: Office's dark themes on its own pane colour, with every text checked for WCAG AA contrast; `switch`: Office, Light and Dark at the pane's foot and in the settings, no header button).
+This loads the pane in headless Chrome with a stand-in for Office.js (`dev/office-stub.js`) that models a Word document and an Excel workbook, and answers API calls with canned results. It covers Check, Rewrite and Replace, the check that runs when the pane opens on a selection (and when it doesn't), the cases where Replace refuses, the limits, the API key, the manifests, and the pane's light and dark (`theme`: Office's dark themes on its own pane colour, with every text checked for WCAG AA contrast; `switch`: Office, Light and Dark at the pane's foot and in the settings, no header button), and the foot's link to p3n.si, which Office opens in the browser, never in the pane (`foot`).
 
 - `LIVE=1 npm run e2e` uses the live API without a key: one Check and one Rewrite, 2 of the 10 free calls an hour.
 - `ONLY=replace,excelReplace` runs some of the scenarios. `CHROME=` points at another Chrome.
@@ -40,7 +40,7 @@ Once, first: `npx office-addin-dev-certs install` makes a certificate for `local
 
 ## Release
 
-1. Raise the version in `package.json`, in `manifest.xml` (`<Version>` has four parts) and in `src/lib/api.js` (`VERSION`, sent in `X-P3N-Client`), then run `npm run manifest` and `npm run validate`.
+1. Raise the version in `package.json`, in `manifest.xml` (`<Version>` has four parts) and in `src/lib/api.js` (`VERSION`, sent in `X-P3N-Client`), then run `npm run manifest` and `npm run validate`. Say what changed at the top of `CHANGELOG.md` (it isn't deployed).
 2. Push to `main`. CI runs the tests, and the Pages workflow deploys `src/` and `manifest.xml` to `https://nikita-andreiev.com/p3n-office-addin/` once they pass.
 
 Office loads the pane from Pages each time it opens, so a deploy reaches everyone. A change to the manifest reaches people only when they install it again or the store copy is updated. The add-in's Id can't change once it's on AppSource. The store copy is in `store/listing.md`, and the submission steps are in `store/partner-center-steps.md`. `python dev/icons.py` builds the icons.

@@ -322,12 +322,16 @@
 
   // Office's theme: Colorful unless the test sets window.__theme (read live, so a test can change it).
   const COLORFUL = { themeId: 'Colorful', isDarkTheme: false, bodyBackgroundColor: '#ffffff', bodyForegroundColor: '#000000', controlBackgroundColor: '#ffffff', controlForegroundColor: '#000000' };
+  // Links the pane asked Office to open in the browser (OpenBrowserWindowApi), for the test to read back as
+  // window.__opened. window.__noBrowserWindow makes an Office without that API, so the pane falls back to window.open.
+  const opened = [];
+  globalThis.__opened = opened;
   globalThis.Office = {
     HostType: { Word: 'Word', Excel: 'Excel' },
     EventType: { DocumentSelectionChanged: 'documentSelectionChanged', OfficeThemeChanged: 'officeThemeChanged' },
     onReady: async () => ({ host: HOST, platform: 'PC' }),
     context: {
-      requirements: { isSetSupported: (name) => name === (HOST === 'Excel' ? 'ExcelApi' : 'WordApi') },
+      requirements: { isSetSupported: (name) => name === (HOST === 'Excel' ? 'ExcelApi' : 'WordApi') || (name === 'OpenBrowserWindowApi' && !globalThis.__noBrowserWindow) },
       get officeTheme() { return globalThis.__theme ?? COLORFUL; },
       document: {
         // The add-in's settings stored in the document; window.__autoshow tags it to open the pane with it.
@@ -339,7 +343,7 @@
           cb?.({ status: 'succeeded' });
         },
       },
-      ui: {},
+      ui: { openBrowserWindow: (url) => { opened.push(url); } },
     },
   };
 

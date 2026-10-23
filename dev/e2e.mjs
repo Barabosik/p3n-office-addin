@@ -79,8 +79,9 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
 
 await mkdir(OUT, { recursive: true });
-// CI runners have no user namespaces for Chrome's sandbox.
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, pipe: true, args: ['--lang=en-US', ...(process.env.CI ? ['--no-sandbox'] : [])] });
+// CI runners have no user namespaces for Chrome's sandbox. p3n.si itself never resolves here, so a link clicked in a
+// test that opened a window after all fails instead of loading the site.
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, pipe: true, args: ['--lang=en-US', '--host-resolver-rules=MAP p3n.si ~NOTFOUND', ...(process.env.CI ? ['--no-sandbox'] : [])] });
 const errors = [];
 
 async function openPane({ name, width = 320, height = 900, calm = false, key = null, host = 'Word', scheme = 'light', theme = null, pick = null }) {
@@ -835,6 +836,90 @@ const SCENARIOS = {
     ok("switch: Dark in a dark Office theme keeps Office's colour", t.theme === 'dark' && t.bg === 'rgb(38, 38, 38)' && t.stored === 'dark' && t.settings === 'dark', JSON.stringify(t));
     await page.evaluate(() => localStorage.removeItem('p3n.theme'));
     await page.close();
+  },
+
+  // The pane's foot, in Word and Excel: under the quota a link to p3n.si, there with or without a key and through a
+  // change of the quota, that opens in the browser through Office (openBrowserWindow), never in the pane. The pill's
+  // first button says it matches Office's theme. At 320px the foot fits, the pill on the right.
+  async foot() {
+    if (LIVE) return;
+    const LINK = 'footer a[href="https://p3n.si/"]';
+    // The name a screen reader reads, from Chrome's accessibility tree (which keeps the space before the hidden arrow).
+    const named = async (page, sel) => (await page.accessibility.snapshot({ root: await page.$(sel), interestingOnly: false }))?.name?.trim();
+    // window.open only records, so a link that got past Office opens no window here.
+    const opens = (page) => page.evaluateOnNewDocument(() => { window.__windowOpen = []; window.open = (...a) => { window.__windowOpen.push(a); return null; }; });
+    const fits = (page) => page.evaluate((sel) => {
+      const a = document.querySelector(sel).getBoundingClientRect();
+      const pill = document.querySelector('footer .pill').getBoundingClientRect();
+      return { line: document.querySelector(sel).getClientRects().length === 1, pillRight: pill.right <= innerWidth - 14 && pill.left > a.right, scroll: document.documentElement.scrollWidth <= innerWidth };
+    }, LINK);
+    for (const host of ['Word', 'Excel']) {
+      const page = await openPane({ name: `foot${host}`, host });
+      await opens(page);
+      await boot(page);
+      const link = await page.evaluate((sel) => {
+        const a = document.querySelector(sel);
+        const q = document.querySelector('#quota');
+        window.__link = a;
+        return a && { target: a.target, rel: a.rel, title: a.title, text: a.textContent, after: !q.contains(a) && !!(q.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING), quota: q.textContent };
+      }, LINK);
+      const name = await named(page, LINK);
+      ok(`foot: ${host}: a link to https://p3n.si/ after the quota line, named "p3n.si"`, !!link && link.target === '_blank' && link.rel === 'noopener' && link.title === 'Open p3n.si in your browser'
+        && link.text === 'p3n.si ↗' && link.after && /^Free without a key/.test(link.quota) && name === 'p3n.si', JSON.stringify({ ...link, name }));
+      // A check changes the quota (X-Free-Remaining); the link stays, the same one, and out of the quota's text.
+      await type(page, P2);
+      await run(page, '#check');
+      const kept = await page.evaluate((sel) => ({ quota: document.querySelector('#quota').textContent, same: document.querySelector(sel) === window.__link && window.__link.isConnected }), LINK);
+      ok(`foot: ${host}: the link stays when the quota changes`, kept.same && kept.quota === '7 free calls left this hour without a key.', JSON.stringify(kept));
+      // A click, and Enter on the link, ask Office to open p3n.si; the pane stays where it is and no window opens.
+      const pages = (await browser.pages()).length;
+      await page.click(LINK);
+      await page.focus(LINK);
+      await page.keyboard.press('Enter');
+      await pause(300);
+      const after = await page.evaluate(() => ({ opened: window.__opened, windowOpen: window.__windowOpen.length, at: location.pathname }));
+      ok(`foot: ${host}: clicking it, or Enter on it, opens https://p3n.si/ in the browser through Office, not in the pane`, JSON.stringify(after.opened) === '["https://p3n.si/","https://p3n.si/"]'
+        && !after.windowOpen && after.at === '/taskpane.html' && (await browser.pages()).length === pages, JSON.stringify(after));
+      const labels = await page.evaluate(() => [...document.querySelectorAll('footer [data-theme-set]')].map((b) => [b.dataset.themeSet, b.getAttribute('aria-label'), b.title]));
+      const pillName = await named(page, 'footer [data-theme-set="office"]');
+      ok(`foot: ${host}: the pill's first button is "Match Office theme"; Light and Dark keep their names`, JSON.stringify(labels) === JSON.stringify([['office', 'Match Office theme', 'Match Office theme'], ['light', 'Light', 'Light'], ['dark', 'Dark', 'Dark']])
+        && pillName === 'Match Office theme', JSON.stringify({ labels, pillName }));
+      await click(page, '#account');
+      await page.waitForFunction(() => !document.querySelector('#settings').hidden, { timeout: 5000 });
+      const office = await page.$eval('#settings [data-theme-set="office"]', (b) => ({ text: b.textContent.trim(), title: b.title }));
+      const officeName = await named(page, '#settings [data-theme-set="office"]');
+      ok(`foot: ${host}: in the settings, Office keeps its label and name, "Match Office theme" as its tooltip`, office.text === 'Office' && office.title === 'Match Office theme' && officeName === 'Office', JSON.stringify({ ...office, officeName }));
+      await page.close();
+    }
+
+    // Word, without the API: the link opens through window.open, still not in the pane.
+    let page = await openPane({ name: 'footFallback' });
+    await opens(page);
+    await page.evaluateOnNewDocument(() => { window.__noBrowserWindow = true; });
+    await boot(page);
+    await page.click(LINK);
+    await pause(300);
+    const fallback = await page.evaluate(() => ({ opened: window.__opened.length, windowOpen: window.__windowOpen, at: location.pathname }));
+    ok('foot: without openBrowserWindow the link goes to window.open, not the pane', !fallback.opened && JSON.stringify(fallback.windowOpen) === '[["https://p3n.si/","_blank","noopener"]]' && fallback.at === '/taskpane.html', JSON.stringify(fallback));
+    await page.close();
+
+    // At 320px, with the longest quota (no key) and with a key, light and dark; the captures are at twice the pixels.
+    for (const [mode, theme] of [['light', null], ['dark', officeDark('#262626')]]) {
+      page = await openPane({ name: 'foot', height: 560, theme });
+      await page.setViewport({ width: 320, height: 560, deviceScaleFactor: 2 });
+      await boot(page);
+      const free = await fits(page);
+      await pause(300);
+      await page.screenshot({ path: path.join(OUT, `pane-foot-${mode}.png`) });
+      await page.close();
+      page = await openPane({ name: 'foot', key: 'p3n_good_key', theme });
+      await boot(page);
+      await page.waitForFunction(() => /Balance \$4\.20/.test(document.querySelector('#quota').textContent), { timeout: 5000 }).catch(() => {});
+      const keyed = await page.evaluate((sel) => ({ quota: document.querySelector('#quota').textContent, link: !!document.querySelector(sel)?.checkVisibility() }), LINK);
+      const keyFits = await fits(page);
+      ok(`foot: ${mode}: at 320px the link sits on one line and the pill stays on the right, with or without a key`, Object.values(free).every(Boolean) && Object.values(keyFits).every(Boolean) && keyed.link && /^Balance \$4\.20/.test(keyed.quota), JSON.stringify({ free, keyFits, keyed }));
+      await page.close();
+    }
   },
 
   // Outside Office (the pane opened in a plain browser): paste still works, no selection link.

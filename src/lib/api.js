@@ -17,7 +17,7 @@ export const MIN_DETECT_CHARS = 40;
 export const MIN_REWRITE_WORDS = 8;
 export const rewriteWords = (t) => (String(t ?? '').match(/[A-Za-z][A-Za-z'-]*/g) ?? []).length;
 // The add-in's version, as in package.json and manifest.xml (the e2e checks they agree).
-export const VERSION = '1.2.3';
+export const VERSION = '1.2.4';
 
 // Every call names this client (X-P3N-Client), for the user's usage page: p3n-word or p3n-excel and the version.
 // Set once Office says which app the pane is in; until then (or outside Office) calls go without it.
