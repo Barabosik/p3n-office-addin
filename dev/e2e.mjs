@@ -845,7 +845,7 @@ const SCENARIOS = {
     if (LIVE) return;
     const LINK = 'footer a[href="https://p3n.si/"]';
     // The name a screen reader reads, from Chrome's accessibility tree (which keeps the space before the hidden arrow).
-    const named = async (page, sel) => (await page.accessibility.snapshot({ root: await page.$(sel), interestingOnly: false }))?.name?.trim();
+    const named = async (page, sel) => (await page.accessibility.snapshot({ root: await page.$(sel), interestingOnly: false }))?.name;
     // window.open only records, so a link that got past Office opens no window here.
     const opens = (page) => page.evaluateOnNewDocument(() => { window.__windowOpen = []; window.open = (...a) => { window.__windowOpen.push(a); return null; }; });
     const fits = (page) => page.evaluate((sel) => {
